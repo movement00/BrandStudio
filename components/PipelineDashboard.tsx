@@ -11,6 +11,7 @@ import {
 } from '../types';
 import { pipelineService } from '../services/pipelineService';
 import { resizeImageToRawBase64, generatePipelineTopics, reviseGeneratedImage } from '../services/geminiService';
+import { downloadBase64Image, downloadMultipleImages } from '../services/downloadService';
 import { searchInspiration, downloadImage, scoreAndRankResults } from '../services/scoutService';
 
 interface PipelineDashboardProps {
@@ -360,28 +361,6 @@ const PipelineDashboard: React.FC<PipelineDashboardProps> = ({
     setIsRunning(false);
   };
 
-  // Safe download: base64 → Blob → ObjectURL (prevents crash on large data URLs)
-  const downloadBase64Image = (base64: string, filename: string) => {
-    try {
-      const byteChars = atob(base64);
-      const byteNumbers = new Uint8Array(byteChars.length);
-      for (let i = 0; i < byteChars.length; i++) {
-        byteNumbers[i] = byteChars.charCodeAt(i);
-      }
-      const blob = new Blob([byteNumbers], { type: 'image/png' });
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = filename;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      setTimeout(() => URL.revokeObjectURL(url), 1000);
-    } catch (err) {
-      console.error('Download failed:', err);
-    }
-  };
-
   const [isDownloadingAll, setIsDownloadingAll] = useState(false);
 
   const downloadAllResults = async () => {
@@ -389,18 +368,10 @@ const PipelineDashboard: React.FC<PipelineDashboardProps> = ({
     setIsDownloadingAll(true);
 
     const items = currentRun.results
-      .map((r, i) => ({ data: r.revisedImageBase64 || r.generatedImageBase64, topic: r.topic, index: i }))
-      .filter(item => item.data);
+      .map((r, i) => ({ base64: (r.revisedImageBase64 || r.generatedImageBase64)!, filename: `pipeline-${i + 1}-${r.topic.slice(0, 30)}.png` }))
+      .filter(item => item.base64);
 
-    for (let i = 0; i < items.length; i++) {
-      const { data, topic, index } = items[i];
-      downloadBase64Image(data!, `pipeline-${index + 1}-${topic.slice(0, 30)}.png`);
-      // Stagger downloads so browser doesn't block them
-      if (i < items.length - 1) {
-        await new Promise(resolve => setTimeout(resolve, 500));
-      }
-    }
-
+    await downloadMultipleImages(items);
     setIsDownloadingAll(false);
   };
 

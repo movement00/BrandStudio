@@ -3,6 +3,7 @@ import React, { useState } from 'react';
 import { Brand, GeneratedAsset, BulkMatchItem, UploadedReference } from '../types';
 import { Upload, Layers, Loader2, Play, Square, RectangleVertical, RectangleHorizontal, CheckCircle, AlertCircle, RefreshCw, Wand2, Image as ImageIcon, X, Edit3, Send } from 'lucide-react';
 import { fileToGenerativePart, analyzeImageStyle, matchTopicsToStyles, generateBrandedImage, reviseGeneratedImage } from '../services/geminiService';
+import { downloadBase64Image } from '../services/downloadService';
 
 interface BulkGeneratorProps {
   brands: Brand[];
@@ -603,13 +604,12 @@ const BulkGenerator: React.FC<BulkGeneratorProps> = ({ brands, addToHistory }) =
                                    </div>
                                  ) : (
                                     <div className="flex flex-wrap gap-2">
-                                       <a 
-                                         href={`data:image/png;base64,${match.resultUrl}`} 
-                                         download={`bulk-result-${idx}.png`}
+                                       <button
+                                         onClick={() => downloadBase64Image(match.resultUrl!, `bulk-result-${idx}.png`)}
                                          className="flex-1 text-xs bg-slate-800 hover:bg-slate-700 text-white px-2 py-1.5 rounded text-center transition-colors truncate"
                                        >
                                          İndir
-                                       </a>
+                                       </button>
                                        <button
                                          onClick={() => handleRegenerateItem(idx)}
                                          className="text-xs bg-slate-800 hover:bg-slate-700 text-white px-2 py-1.5 rounded transition-colors flex items-center justify-center"

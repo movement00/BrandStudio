@@ -14,6 +14,7 @@ import {
   resetBackendDetection,
   scoreAndRankResults,
 } from '../services/scoutService';
+import { downloadBase64Image } from '../services/downloadService';
 
 interface ContentScoutProps {
   brands: Brand[];
@@ -811,13 +812,12 @@ const ContentScout: React.FC<ContentScoutProps> = ({ brands, addToHistory }) => 
                     <p className="text-xs text-slate-400 truncate mb-2">{insp.searchQuery}</p>
                     <div className="flex gap-2">
                       {insp.adaptedImageBase64 && (
-                        <a
-                          href={`data:image/png;base64,${insp.adaptedImageBase64}`}
-                          download={`scout-${selectedBrand?.name || 'brand'}-${Date.now()}.png`}
+                        <button
+                          onClick={() => downloadBase64Image(insp.adaptedImageBase64!, `scout-${selectedBrand?.name || 'brand'}-${Date.now()}.png`)}
                           className="flex-1 flex items-center justify-center gap-1.5 py-2 bg-lumina-gold text-black rounded-lg text-xs font-medium hover:bg-lumina-gold/90 transition-colors"
                         >
                           <Download size={14} /> İndir
-                        </a>
+                        </button>
                       )}
                       <button
                         onClick={() => handleDelete(insp.id)}

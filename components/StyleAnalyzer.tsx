@@ -3,6 +3,7 @@ import React, { useState, useEffect } from 'react';
 import { Brand, StyleAnalysis, SavedTemplate, GeneratedAsset, TemplateFolder } from '../types';
 import { Upload, Sparkles, Save, Image as ImageIcon, Loader2, RefreshCw, RectangleHorizontal, RectangleVertical, Square, Edit3, Send } from 'lucide-react';
 import { analyzeImageStyle, generateBrandedImage, fileToGenerativePart, reviseGeneratedImage } from '../services/geminiService';
+import { downloadBase64Image } from '../services/downloadService';
 
 interface StyleAnalyzerProps {
   brands: Brand[];
@@ -416,13 +417,12 @@ const StyleAnalyzer: React.FC<StyleAnalyzerProps> = ({
                      >
                        <span className="flex items-center gap-2"><Edit3 size={16} /> Revize Et</span>
                      </button>
-                     <a 
-                       href={`data:image/png;base64,${generatedImage}`} 
-                       download={`lumina-gen-${Date.now()}.png`}
+                     <button
+                       onClick={() => downloadBase64Image(generatedImage!, `lumina-gen-${Date.now()}.png`)}
                        className="bg-slate-800 hover:bg-slate-700 text-white px-4 py-2 rounded-lg text-sm transition-colors"
                      >
                        İndir
-                     </a>
+                     </button>
                   </div>
                 </div>
               </div>
