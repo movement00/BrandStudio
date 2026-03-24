@@ -1,6 +1,6 @@
 """
 Content Scout - Python Scraping Service
-Pinterest, Google Images, DuckDuckGo scraping with Scrapling's anti-bot bypass.
+Pinterest, Google Images, DuckDuckGo scraping with multiple fallback engines.
 Runs as a local FastAPI server on port 8899.
 """
 
@@ -8,14 +8,13 @@ import asyncio
 import base64
 import json
 import re
-from io import BytesIO
 from typing import Optional
-from urllib.parse import quote, urljoin
+from urllib.parse import quote
 
+import httpx
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from scrapling import Fetcher
 
 app = FastAPI(title="Content Scout Scraper")
 
@@ -26,7 +25,12 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-fetcher = Fetcher(auto_match=False)
+# Shared httpx client with browser-like headers
+HEADERS = {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+    "Accept-Language": "en-US,en;q=0.9",
+}
 
 
 # ── Models ──────────────────────────────────────────
@@ -39,46 +43,20 @@ class SearchRequest(BaseModel):
 class ProxyRequest(BaseModel):
     url: str
 
-class SearchResult(BaseModel):
-    title: str
-    imageUrl: str
-    thumbnailUrl: str
-    sourceUrl: str
-    platform: str
-    width: int = 0
-    height: int = 0
-
 
 # ── Scrapers ────────────────────────────────────────
 
 def search_duckduckgo(query: str) -> list[dict]:
-    """DuckDuckGo image search - no API key needed."""
+    """DuckDuckGo image search using duckduckgo_search library."""
     results = []
     try:
-        # Step 1: Get vqd token
-        token_page = fetcher.get(
-            f"https://duckduckgo.com/?q={quote(query)}&iax=images&ia=images"
-        )
-        vqd_match = re.search(r'vqd=["\']([^"\']+)', token_page.text)
-        if not vqd_match:
-            print("DDG: Could not extract vqd token")
-            return []
-        vqd = vqd_match.group(1)
-
-        # Step 2: Fetch image results
-        img_url = (
-            f"https://duckduckgo.com/i.js?"
-            f"l=us-en&o=json&q={quote(query)}&vqd={vqd}&f=,,,,,&p=1"
-        )
-        img_resp = fetcher.get(img_url)
-        data = json.loads(img_resp.text)
-
-        for r in (data.get("results") or [])[:20]:
-            if r.get("image"):
+        from duckduckgo_search import DDGS
+        with DDGS() as ddgs:
+            for r in ddgs.images(query, max_results=25):
                 results.append({
                     "title": r.get("title", ""),
-                    "imageUrl": r["image"],
-                    "thumbnailUrl": r.get("thumbnail", r["image"]),
+                    "imageUrl": r.get("image", ""),
+                    "thumbnailUrl": r.get("thumbnail", r.get("image", "")),
                     "sourceUrl": r.get("url", ""),
                     "platform": "duckduckgo",
                     "width": r.get("width", 0),
@@ -90,48 +68,63 @@ def search_duckduckgo(query: str) -> list[dict]:
 
 
 def search_pinterest(query: str) -> list[dict]:
-    """Pinterest scraping - parse HTML for pin images."""
+    """Pinterest scraping via their resource endpoint."""
     results = []
     try:
-        url = f"https://www.pinterest.com/search/pins/?q={quote(query)}"
-        page = fetcher.get(url)
-        html = page.text
+        # Use Pinterest's internal search API
+        url = "https://www.pinterest.com/resource/BaseSearchResource/get/"
+        params = {
+            "source_url": f"/search/pins/?q={quote(query)}",
+            "data": json.dumps({
+                "options": {
+                    "query": query,
+                    "scope": "pins",
+                    "page_size": 25,
+                },
+                "context": {},
+            }),
+        }
+        with httpx.Client(headers={**HEADERS, "X-Requested-With": "XMLHttpRequest"}, follow_redirects=True, timeout=15) as client:
+            resp = client.get(url, params=params)
 
-        # Try extracting original images
-        orig_pattern = re.compile(
-            r'"orig":\{"url":"(https://i\.pinimg\.com/originals/[^"]+)",'
-            r'"width":(\d+),"height":(\d+)'
-        )
-        for match in orig_pattern.finditer(html):
-            if len(results) >= 15:
-                break
-            results.append({
-                "title": f"Pinterest {len(results) + 1}",
-                "imageUrl": match.group(1),
-                "thumbnailUrl": match.group(1).replace("/originals/", "/236x/"),
-                "sourceUrl": "https://www.pinterest.com",
-                "platform": "pinterest",
-                "width": int(match.group(2)),
-                "height": int(match.group(3)),
-            })
+        if resp.status_code == 200:
+            data = resp.json()
+            pins = data.get("resource_response", {}).get("data", {}).get("results", [])
+            for pin in pins:
+                images = pin.get("images", {})
+                orig = images.get("orig", {})
+                thumb = images.get("236x", {})
+                if orig.get("url"):
+                    results.append({
+                        "title": pin.get("grid_title", "") or pin.get("description", "")[:80] or f"Pinterest {len(results)+1}",
+                        "imageUrl": orig["url"],
+                        "thumbnailUrl": thumb.get("url", orig["url"]),
+                        "sourceUrl": f"https://www.pinterest.com/pin/{pin.get('id', '')}",
+                        "platform": "pinterest",
+                        "width": orig.get("width", 0),
+                        "height": orig.get("height", 0),
+                    })
 
-        # Fallback: 736x images
+        # Fallback: HTML scraping
         if not results:
+            with httpx.Client(headers=HEADERS, follow_redirects=True, timeout=15) as client:
+                resp = client.get(f"https://www.pinterest.com/search/pins/?q={quote(query)}")
+            html = resp.text
             seen = set()
-            for match in re.finditer(
-                r'https://i\.pinimg\.com/736x/[a-f0-9/]+\.\w+', html
-            ):
+            for match in re.finditer(r'https://i\.pinimg\.com/(?:originals|736x)/[a-f0-9/]+\.\w+', html):
                 img_url = match.group(0)
                 if img_url in seen or len(results) >= 15:
                     continue
                 seen.add(img_url)
+                orig_url = img_url.replace("/736x/", "/originals/")
+                thumb_url = img_url if "/736x/" in img_url else img_url.replace("/originals/", "/236x/")
                 results.append({
-                    "title": f"Pinterest {len(results) + 1}",
-                    "imageUrl": img_url.replace("/736x/", "/originals/"),
-                    "thumbnailUrl": img_url,
+                    "title": f"Pinterest {len(results)+1}",
+                    "imageUrl": orig_url,
+                    "thumbnailUrl": thumb_url,
                     "sourceUrl": "https://www.pinterest.com",
                     "platform": "pinterest",
-                    "width": 736,
+                    "width": 0,
                     "height": 0,
                 })
     except Exception as e:
@@ -144,11 +137,12 @@ def search_google_images(query: str) -> list[dict]:
     results = []
     try:
         url = f"https://www.google.com/search?q={quote(query)}&tbm=isch&ijn=0"
-        page = fetcher.get(url)
-        html = page.text
+        with httpx.Client(headers=HEADERS, follow_redirects=True, timeout=15) as client:
+            resp = client.get(url)
+        html = resp.text
 
         seen = set()
-        # Google embeds full-res image URLs in JS arrays: ["url", height, width]
+        # Google embeds full-res image URLs in JS
         pattern = re.compile(
             r'\["(https?://[^"]+\.(?:jpg|jpeg|png|webp))",\s*(\d+),\s*(\d+)\]'
         )
@@ -164,7 +158,7 @@ def search_google_images(query: str) -> list[dict]:
                 continue
             seen.add(img_url)
             results.append({
-                "title": f"Image {len(results) + 1}",
+                "title": f"Google Image {len(results)+1}",
                 "imageUrl": img_url,
                 "thumbnailUrl": img_url,
                 "sourceUrl": img_url,
@@ -179,16 +173,22 @@ def search_google_images(query: str) -> list[dict]:
 
 def proxy_image(image_url: str) -> dict:
     """Download an image and return as base64."""
-    resp = fetcher.get(image_url)
-    raw = resp.content if hasattr(resp, 'content') else resp.text.encode()
-    b64 = base64.b64encode(raw).decode()
-    # Guess mime type
-    if image_url.endswith(".png"):
+    with httpx.Client(headers=HEADERS, follow_redirects=True, timeout=30) as client:
+        resp = client.get(image_url)
+    resp.raise_for_status()
+
+    b64 = base64.b64encode(resp.content).decode()
+
+    content_type = resp.headers.get("content-type", "")
+    if "png" in content_type:
         mime = "image/png"
-    elif image_url.endswith(".webp"):
+    elif "webp" in content_type:
         mime = "image/webp"
+    elif "gif" in content_type:
+        mime = "image/gif"
     else:
         mime = "image/jpeg"
+
     return {"base64": b64, "mimeType": mime}
 
 
@@ -210,13 +210,13 @@ def api_search(req: SearchRequest):
                 r = search_google_images(f"{query} social media design inspiration")
             else:
                 continue
-            if r:
-                sources_report[source] = len(r)
-                all_results.extend(r)
+            sources_report[source] = len(r)
+            all_results.extend(r)
         except Exception as e:
             print(f"Source {source} failed: {e}")
+            sources_report[source] = 0
 
-    # Deduplicate
+    # Deduplicate by imageUrl
     seen = set()
     unique = []
     for item in all_results:
@@ -240,7 +240,7 @@ def api_proxy(req: ProxyRequest):
 def api_health():
     return {
         "status": "ok",
-        "engine": "scrapling",
+        "engine": "duckduckgo_search + httpx",
         "sources": ["duckduckgo", "pinterest", "google"],
     }
 
