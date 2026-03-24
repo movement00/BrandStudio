@@ -4,8 +4,8 @@ import {
   PipelineResult, PipelineImage, SavedTemplate, GeneratedAsset
 } from '../types';
 import {
-  analyzeImageStyle, matchTopicsToStyles, generateBrandedImage, reviseGeneratedImage,
-  reviewDesignQuality, DesignReview
+  analyzeImageStyle, matchTopicsToStyles, generateBrandedImage,
+  generateDesignDirectives, DesignDirectives
 } from './geminiService';
 
 type PipelineEventType = 'step-update' | 'result-update' | 'run-update' | 'log';
@@ -83,13 +83,13 @@ export class PipelineService {
     const steps: PipelineStep[] = [
       { id: 'analyze', name: 'Stil Analizi', description: 'Referans görseller analiz ediliyor', status: 'idle', progress: 0 },
       { id: 'match', name: 'Akıllı Eşleştirme', description: 'Konular en uygun stillerle eşleştiriliyor', status: 'idle', progress: 0 },
+      { id: 'directives', name: 'Tasarım Direktifleri', description: 'AI Kreatif Direktör tasarım kurallarını belirliyor', status: 'idle', progress: 0 },
       { id: 'generate', name: 'Görsel Üretimi', description: 'Markalı görseller üretiliyor', status: 'idle', progress: 0 },
-      { id: 'revise', name: 'AI Tasarım Denetimi', description: 'Tipografi, hiyerarşi, renk uyumu kontrol ediliyor', status: 'idle', progress: 0 },
       { id: 'save', name: 'Kayıt & Arşiv', description: 'Sonuçlar kaydediliyor', status: 'idle', progress: 0 },
     ];
 
     if (!config.autoRevise) {
-      steps[3].status = 'skipped';
+      steps[2].status = 'skipped'; // Skip directives step
     }
     if (!config.saveAsTemplate) {
       steps[4].status = 'skipped';
@@ -125,13 +125,14 @@ export class PipelineService {
       // ===== STEP 2: MATCH =====
       const matches = await this.stepMatch(config.topics, analyses, signal);
 
-      // ===== STEP 3: GENERATE =====
-      await this.stepGenerate(config, brand, analyses, matches, signal);
-
-      // ===== STEP 4: REVISE (optional) =====
+      // ===== STEP 3: DESIGN DIRECTIVES (optional, before generation) =====
+      let directives: Map<number, string> | null = null;
       if (config.autoRevise) {
-        await this.stepRevise(brand, signal);
+        directives = await this.stepDirectives(config, brand, analyses, matches, signal);
       }
+
+      // ===== STEP 4: GENERATE =====
+      await this.stepGenerate(config, brand, analyses, matches, signal, directives);
 
       // ===== STEP 5: SAVE (optional) =====
       if (config.saveAsTemplate) {
@@ -229,13 +230,14 @@ export class PipelineService {
     return matches;
   }
 
-  // ===== STEP 3: Generate branded images =====
+  // ===== STEP 4: Generate branded images =====
   private async stepGenerate(
     config: PipelineConfig,
     brand: Brand,
     analyses: Map<string, StyleAnalysis>,
     matches: { topicIndex: number; styleId: string }[],
-    signal: AbortSignal
+    signal: AbortSignal,
+    directives?: Map<number, string> | null
   ): Promise<void> {
     this.updateStep('generate', { status: 'running', startedAt: Date.now() });
     this.log('Görsel üretimi başlıyor...');
@@ -265,13 +267,20 @@ export class PipelineService {
           ? config.productImages[i % config.productImages.length]
           : null;
 
+        // Get pre-generated design directive for this topic (if available)
+        const directive = directives?.get(match.topicIndex);
+        if (directive) {
+          this.log(`  → Tasarım direktifi uygulanıyor...`);
+        }
+
         const imageBase64 = await generateBrandedImage(
           brand,
           analysis,
           refImage.base64,
           productImg?.base64 || null,
           topic,
-          config.aspectRatio
+          config.aspectRatio,
+          directive
         );
 
         this.updateResult(`result-${match.topicIndex}`, {
@@ -298,74 +307,55 @@ export class PipelineService {
     this.log('Görsel üretimi tamamlandı.');
   }
 
-  // ===== STEP 4: Auto-revise with AI Design Review Agent =====
-  private async stepRevise(brand: Brand, signal: AbortSignal): Promise<void> {
-    this.updateStep('revise', { status: 'running', startedAt: Date.now() });
-    this.log('🔍 Tasarım Denetim Ajanı devrede — her görsel profesyonel kriterlere göre değerlendiriliyor...');
+  // ===== STEP 3: Generate design directives before image generation =====
+  private async stepDirectives(
+    config: PipelineConfig,
+    brand: Brand,
+    analyses: Map<string, StyleAnalysis>,
+    matches: { topicIndex: number; styleId: string }[],
+    signal: AbortSignal
+  ): Promise<Map<number, string>> {
+    this.updateStep('directives', { status: 'running', startedAt: Date.now() });
+    this.log('AI Kreatif Direktör tasarım kurallarını belirliyor...');
 
-    const completedResults = this.currentRun!.results.filter(
-      r => r.status === 'completed' && r.generatedImageBase64
-    );
+    const directivesMap = new Map<number, string>();
 
-    let revisedCount = 0;
-    let skippedCount = 0;
-
-    for (let i = 0; i < completedResults.length; i++) {
+    for (let i = 0; i < matches.length; i++) {
       if (signal.aborted) throw new DOMException('Aborted', 'AbortError');
 
-      const result = completedResults[i];
-      this.updateResult(result.id, { status: 'revising' });
-      this.log(`Denetleniyor (${i + 1}/${completedResults.length}): "${result.topic}"`);
+      const match = matches[i];
+      const topic = config.topics[match.topicIndex];
+      const analysis = analyses.get(match.styleId);
+
+      if (!analysis) continue;
+
+      this.log(`Direktif oluşturuluyor (${i + 1}/${matches.length}): "${topic}"`);
 
       try {
-        // Step 4a: AI Design Review — evaluate against world-class design standards
-        const review: DesignReview = await reviewDesignQuality(
-          result.generatedImageBase64!,
+        const directives = await generateDesignDirectives(
           brand,
-          result.topic
+          topic,
+          analysis,
+          config.aspectRatio
         );
 
-        this.log(`  → Puan: ${review.score}/100 ${review.score >= 85 ? '✓ Mükemmel' : '⚠ Revizyon gerekli'}`);
-        if (review.issues.length > 0) {
-          this.log(`  → Sorunlar: ${review.issues.join('; ')}`);
-        }
+        directivesMap.set(match.topicIndex, directives.fullDirective);
 
-        // Step 4b: If score below threshold, auto-revise
-        if (review.needsRevision && review.revisionPrompt) {
-          this.log(`  → Otomatik revize ediliyor...`);
+        this.log(`  → Tipografi: ${directives.typographyRules.slice(0, 60)}...`);
+        this.log(`  → Renk: ${directives.colorStrategy.slice(0, 60)}...`);
 
-          const revised = await reviseGeneratedImage(
-            result.generatedImageBase64!,
-            review.revisionPrompt,
-            null
-          );
-
-          this.updateResult(result.id, {
-            status: 'completed',
-            revisedImageBase64: revised,
-            designReview: review,
-          });
-          revisedCount++;
-        } else {
-          // Score is good, no revision needed
-          this.updateResult(result.id, {
-            status: 'completed',
-            designReview: review,
-          });
-          skippedCount++;
-        }
-
-        this.updateStep('revise', {
-          progress: Math.round(((i + 1) / completedResults.length) * 100),
+        this.updateStep('directives', {
+          progress: Math.round(((i + 1) / matches.length) * 100),
         });
       } catch (err: any) {
-        this.log(`Denetim hatası ("${result.topic}"): ${err.message}`);
-        this.updateResult(result.id, { status: 'completed' });
+        this.log(`Direktif hatası ("${topic}"): ${err.message}`);
+        // Continue without directive — image will still generate with base prompt
       }
     }
 
-    this.updateStep('revise', { status: 'completed', completedAt: Date.now(), progress: 100 });
-    this.log(`Tasarım denetimi tamamlandı: ${revisedCount} revize edildi, ${skippedCount} onaylandı.`);
+    this.updateStep('directives', { status: 'completed', completedAt: Date.now(), progress: 100 });
+    this.log(`${directivesMap.size} konu için tasarım direktifi oluşturuldu.`);
+    return directivesMap;
   }
 
   // ===== STEP 5: Save results as templates =====

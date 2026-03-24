@@ -594,11 +594,11 @@ const PipelineDashboard: React.FC<PipelineDashboardProps> = ({
               onChange={e => handleImageUpload(e.target.files, setProductImages)}
             />
 
-            {/* Auto Revise Toggle */}
+            {/* AI Design Directives Toggle */}
             <div className="flex items-center justify-between mt-4 p-3 bg-lumina-950 rounded-lg border border-lumina-800">
               <div>
-                <p className="text-sm text-white">AI Tasarım Denetimi</p>
-                <p className="text-xs text-slate-500">Tipografi, hiyerarşi, renk uyumu otomatik kontrol</p>
+                <p className="text-sm text-white">AI Kreatif Direktör</p>
+                <p className="text-xs text-slate-500">Üretim öncesi profesyonel tasarım kuralları</p>
               </div>
               <button
                 onClick={() => setAutoRevise(!autoRevise)}
@@ -612,8 +612,9 @@ const PipelineDashboard: React.FC<PipelineDashboardProps> = ({
             {autoRevise && (
               <div className="mt-2 p-2.5 bg-indigo-500/10 border border-indigo-500/20 rounded-lg">
                 <p className="text-xs text-indigo-300">
-                  AI Kreatif Direktör her görseli denetleyecek: tipografi, görsel hiyerarşi,
-                  renk dağılımı, marka uyumu ve genel kalite. 85/100 altı görseller otomatik revize edilir.
+                  Üretimden ÖNCE her konu için AI Kreatif Direktör detaylı tasarım direktifi oluşturur:
+                  tipografi kuralları, renk stratejisi (60-30-10), kompozisyon rehberi, görsel hiyerarşi planı.
+                  Bu kurallar doğrudan üretim prompt'una enjekte edilir.
                 </p>
               </div>
             )}
@@ -731,9 +732,9 @@ const PipelineDashboard: React.FC<PipelineDashboardProps> = ({
                   <div key={result.id} className="bg-lumina-950 border border-lumina-800 rounded-lg overflow-hidden">
                     {/* Image */}
                     <div className="aspect-square relative">
-                      {(result.revisedImageBase64 || result.generatedImageBase64) ? (
+                      {(result.generatedImageBase64) ? (
                         <img
-                          src={`data:image/png;base64,${result.revisedImageBase64 || result.generatedImageBase64}`}
+                          src={`data:image/png;base64,${result.generatedImageBase64}`}
                           className="w-full h-full object-cover"
                           loading="lazy"
                         />
@@ -759,29 +760,12 @@ const PipelineDashboard: React.FC<PipelineDashboardProps> = ({
                         </div>
                       )}
 
-                      {/* Design Review Score Badge */}
-                      {result.designReview && (
-                        <div className={`absolute top-2 right-2 px-1.5 py-0.5 rounded text-[10px] font-bold backdrop-blur-sm ${
-                          result.designReview.score >= 85 ? 'bg-emerald-500/80 text-white' :
-                          result.designReview.score >= 70 ? 'bg-amber-500/80 text-white' :
-                          'bg-red-500/80 text-white'
-                        }`} title={result.designReview.issues.join('\n')}>
-                          {result.designReview.score}/100
-                        </div>
-                      )}
-
-                      {/* Revised badge */}
-                      {result.revisedImageBase64 && (
-                        <div className="absolute top-2 left-2 px-1.5 py-0.5 rounded text-[10px] font-medium bg-indigo-500/80 text-white backdrop-blur-sm">
-                          Revize
-                        </div>
-                      )}
 
                       {/* Download overlay */}
-                      {(result.revisedImageBase64 || result.generatedImageBase64) && (
+                      {(result.generatedImageBase64) && (
                         <div className="absolute inset-0 bg-black/50 opacity-0 hover:opacity-100 transition-opacity flex items-center justify-center">
                           <a
-                            href={`data:image/png;base64,${result.revisedImageBase64 || result.generatedImageBase64}`}
+                            href={`data:image/png;base64,${result.generatedImageBase64}`}
                             download={`${result.topic.slice(0, 30)}.png`}
                             className="bg-white/20 backdrop-blur-sm text-white px-3 py-1.5 rounded-lg text-xs flex items-center gap-1"
                           >
@@ -811,15 +795,6 @@ const PipelineDashboard: React.FC<PipelineDashboardProps> = ({
                              'Bekliyor'}
                           </span>
                         </div>
-                        {result.designReview && result.designReview.issues.length > 0 && (
-                          <button
-                            onClick={() => alert(result.designReview!.issues.join('\n• '))}
-                            className="text-[10px] text-indigo-400 hover:text-indigo-300"
-                            title="Denetim detaylarını gör"
-                          >
-                            Detay
-                          </button>
-                        )}
                       </div>
                     </div>
                   </div>
