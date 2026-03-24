@@ -8,6 +8,7 @@ import BulkGenerator from './components/BulkGenerator';
 import PipelineDashboard from './components/PipelineDashboard';
 import ContentScout from './components/ContentScout';
 import { ViewState, Brand, SavedTemplate, GeneratedAsset, TemplateFolder } from './types';
+import { hasApiKey, setApiKey, getApiKey } from './services/geminiService';
 
 // Initial Mock Data (Translated)
 const INITIAL_BRANDS: Brand[] = [
@@ -136,7 +137,9 @@ const INITIAL_BRANDS: Brand[] = [
 
 function App() {
   const [currentView, setCurrentView] = useState<ViewState>('analyzer');
-  
+  const [showApiKeyModal, setShowApiKeyModal] = useState(!hasApiKey());
+  const [apiKeyInput, setApiKeyInput] = useState(getApiKey());
+
   // Safe Storage Loader
   const loadFromStorage = <T,>(key: string, fallback: T): T => {
     try {
@@ -296,12 +299,58 @@ function App() {
     }
   };
 
+  const handleSaveApiKey = () => {
+    if (apiKeyInput.trim()) {
+      setApiKey(apiKeyInput.trim());
+      setShowApiKeyModal(false);
+    }
+  };
+
   return (
     <div className="flex min-h-screen bg-lumina-950 text-slate-200 selection:bg-lumina-gold selection:text-black">
-      <Sidebar currentView={currentView} setView={setCurrentView} />
+      <Sidebar currentView={currentView} setView={setCurrentView} onApiKeyClick={() => { setApiKeyInput(getApiKey()); setShowApiKeyModal(true); }} />
       <main className="ml-64 w-full h-screen overflow-y-auto">
         {renderContent()}
       </main>
+
+      {/* API Key Modal */}
+      {showApiKeyModal && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[100] flex items-center justify-center p-6">
+          <div className="bg-lumina-900 border border-lumina-800 rounded-2xl p-8 max-w-md w-full">
+            <h2 className="text-xl font-serif text-white mb-2">Gemini API Anahtarı</h2>
+            <p className="text-sm text-slate-400 mb-6">
+              Görsel üretimi ve stil analizi için Google Gemini API anahtarınızı girin.
+              <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener" className="text-indigo-400 ml-1 hover:underline">Buradan alabilirsiniz.</a>
+            </p>
+            <input
+              type="password"
+              value={apiKeyInput}
+              onChange={e => setApiKeyInput(e.target.value)}
+              onKeyDown={e => e.key === 'Enter' && handleSaveApiKey()}
+              placeholder="AIzaSy..."
+              className="w-full bg-lumina-950 border border-lumina-800 rounded-lg px-4 py-3 text-sm text-white mb-4 focus:outline-none focus:border-lumina-gold/50"
+              autoFocus
+            />
+            <div className="flex gap-3">
+              {hasApiKey() && (
+                <button
+                  onClick={() => setShowApiKeyModal(false)}
+                  className="flex-1 py-2.5 rounded-xl text-sm text-slate-400 border border-lumina-800 hover:bg-lumina-800 transition-all"
+                >
+                  İptal
+                </button>
+              )}
+              <button
+                onClick={handleSaveApiKey}
+                disabled={!apiKeyInput.trim()}
+                className="flex-1 py-2.5 rounded-xl text-sm font-medium bg-gradient-to-r from-lumina-gold to-amber-500 text-black hover:from-amber-500 hover:to-lumina-gold transition-all disabled:opacity-40"
+              >
+                Kaydet
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

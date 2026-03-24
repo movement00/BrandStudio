@@ -2,6 +2,31 @@
 import { GoogleGenAI, Type } from "@google/genai";
 import { Brand, StyleAnalysis } from "../types";
 
+// ═══ API Key Management ═══
+const API_KEY_STORAGE = 'lumina_gemini_api_key';
+
+export function getApiKey(): string {
+  // 1. Build-time env (Vercel / AI Studio)
+  const envKey = process.env.API_KEY || process.env.GEMINI_API_KEY || '';
+  if (envKey) return envKey;
+  // 2. User-provided (localStorage)
+  try { return localStorage.getItem(API_KEY_STORAGE) || ''; } catch { return ''; }
+}
+
+export function setApiKey(key: string) {
+  try { localStorage.setItem(API_KEY_STORAGE, key); } catch {}
+}
+
+export function hasApiKey(): boolean {
+  return getApiKey().length > 0;
+}
+
+function getAI(): GoogleGenAI {
+  const key = getApiKey();
+  if (!key) throw new Error('API_KEY_MISSING');
+  return new GoogleGenAI({ apiKey: key });
+}
+
 // Helper to convert file to base64 for API
 export const fileToGenerativePart = async (file: File): Promise<string> => {
   return new Promise((resolve, reject) => {
@@ -61,7 +86,7 @@ export const resizeImageToRawBase64 = (file: File, maxWidth: number = 500): Prom
 
 // 1. Analyze Style (Gemini 3 Pro)
 export const analyzeImageStyle = async (imageBase64: string): Promise<StyleAnalysis> => {
-  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+  const ai = getAI();
   
   const prompt = `
     Sen ödüllü bir sanat yönetmenisin ve teknik görsel analistisin. Bu görseli REPLİKA üretimi için analiz et.
@@ -122,7 +147,7 @@ export const matchTopicsToStyles = async (
   topics: string[], 
   analyzedStyles: { id: string, analysis: StyleAnalysis }[]
 ): Promise<{ topicIndex: number, styleId: string }[]> => {
-  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+  const ai = getAI();
 
   // Create a summary of available styles for the prompt
   const styleDescriptions = analyzedStyles.map((s, index) => {
@@ -189,7 +214,7 @@ export const generateBrandedImage = async (
       }
   }
 
-  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+  const ai = getAI();
 
   // Construct color palette string from the enhanced brand profile
   let colorInstruction = "";
@@ -345,7 +370,7 @@ export const reviseGeneratedImage = async (
       }
   }
 
-  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+  const ai = getAI();
 
   const prompt = `
     GÖREV: Bu görseli aşağıdaki talimatlara göre REVIZE ET (DÜZENLE).
@@ -410,7 +435,7 @@ export const reviseGeneratedImage = async (
 // 5. Smart Scout: Generate search queries for brand
 // ══════════════════════════════════════════════════
 export const generateSmartSearchQueries = async (brand: Brand): Promise<string[]> => {
-  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+  const ai = getAI();
 
   const prompt = `
     Sen dünya çapında bir sosyal medya tasarım uzmanısın. Aşağıdaki marka için Pinterest, Google ve Dribbble'da arama yaparak en iyi sosyal medya gönderi tasarımlarını bulmak istiyorum.
@@ -468,7 +493,7 @@ export const scoreDesignQuality = async (
   imagesBase64: string[],
   brand: Brand
 ): Promise<{ scores: number[]; reasons: string[] }> => {
-  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+  const ai = getAI();
 
   const parts: any[] = [];
 
@@ -568,7 +593,7 @@ export const generatePipelineTopics = async (
   count: number,
   aspectRatio: string
 ): Promise<string[]> => {
-  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+  const ai = getAI();
 
   const formatMap: Record<string, string> = {
     '1:1': 'Instagram kare post',

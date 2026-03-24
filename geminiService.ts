@@ -1,6 +1,7 @@
 
 import { GoogleGenAI, Type } from "@google/genai";
 import { OptimizedPromptDetails } from "./types";
+import { getApiKey } from "./services/geminiService";
 
 const PROMPT_GENERATOR_SYSTEM_INSTRUCTION = `
 Sen, Pixar Stüdyoları'nda çalışan bir Görsel Senaryo Tasarımcısısın. Görevin, verilen hikaye metnini ve **ekli referans görseldeki karakteri** kullanarak Nano Banana Pro modeli için teknik bir 3D çizim direktifi (prompt) hazırlamaktır.
@@ -23,7 +24,7 @@ export class GeminiService {
   private ai: GoogleGenAI;
 
   constructor() {
-    this.ai = new GoogleGenAI({ apiKey: process.env.API_KEY || '' });
+    this.ai = new GoogleGenAI({ apiKey: getApiKey() || '' });
   }
 
   async generateOptimizedPrompt(sceneDescription: string, characterName?: string, referenceImageBase64?: string): Promise<OptimizedPromptDetails> {

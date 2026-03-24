@@ -1,14 +1,15 @@
 
 import React from 'react';
-import { LayoutDashboard, Briefcase, Wand2, Grid, Layers, Zap, Compass } from 'lucide-react';
+import { LayoutDashboard, Briefcase, Wand2, Grid, Layers, Zap, Compass, Key } from 'lucide-react';
 import { ViewState } from '../types';
 
 interface SidebarProps {
   currentView: ViewState;
   setView: (view: ViewState) => void;
+  onApiKeyClick?: () => void;
 }
 
-const Sidebar: React.FC<SidebarProps> = ({ currentView, setView }) => {
+const Sidebar: React.FC<SidebarProps> = ({ currentView, setView, onApiKeyClick }) => {
   const menuItems = [
     { id: 'dashboard', label: 'Panel', icon: LayoutDashboard },
     { id: 'brands', label: 'Marka Profilleri', icon: Briefcase },
@@ -49,7 +50,16 @@ const Sidebar: React.FC<SidebarProps> = ({ currentView, setView }) => {
         })}
       </nav>
 
-      <div className="p-4 border-t border-lumina-800">
+      <div className="p-4 border-t border-lumina-800 space-y-2">
+        {onApiKeyClick && (
+          <button
+            onClick={onApiKeyClick}
+            className="w-full flex items-center gap-3 px-4 py-2.5 rounded-xl text-slate-400 hover:bg-lumina-900 hover:text-white transition-all group"
+          >
+            <Key size={16} className="text-slate-500 group-hover:text-lumina-gold" />
+            <span className="text-sm">API Ayarları</span>
+          </button>
+        )}
         <div className="flex items-center gap-3 px-4 py-3">
            <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-indigo-500 to-purple-500"></div>
            <div>
