@@ -55,7 +55,35 @@ export interface GeneratedAsset {
   createdAt: number;
 }
 
-export type ViewState = 'dashboard' | 'brands' | 'analyzer' | 'library' | 'bulk' | 'pipeline';
+export type ViewState = 'dashboard' | 'brands' | 'analyzer' | 'library' | 'bulk' | 'pipeline' | 'scout';
+
+// Content Scout Types
+export interface ScoutResult {
+  id: string;
+  title: string;
+  imageUrl: string;
+  thumbnailUrl: string;
+  sourceUrl: string;
+  platform: 'pinterest' | 'web' | 'pexels';
+  width: number;
+  height: number;
+  photographer?: string;
+}
+
+export interface ScoutInspiration {
+  id: string;
+  brandId: string;
+  searchQuery: string;
+  sourceUrl?: string;
+  sourcePlatform: string;
+  originalImageBase64?: string;
+  adaptedImageBase64?: string;
+  styleAnalysis?: StyleAnalysis;
+  status: 'discovered' | 'downloaded' | 'analyzing' | 'adapting' | 'ready' | 'published' | 'rejected';
+  tags: string[];
+  score: number;
+  createdAt: string;
+}
 
 // Pipeline Types
 export type PipelineStepStatus = 'idle' | 'running' | 'completed' | 'failed' | 'skipped';

@@ -6,6 +6,7 @@ import StyleAnalyzer from './components/StyleAnalyzer';
 import StyleLibrary from './components/StyleLibrary';
 import BulkGenerator from './components/BulkGenerator';
 import PipelineDashboard from './components/PipelineDashboard';
+import ContentScout from './components/ContentScout';
 import { ViewState, Brand, SavedTemplate, GeneratedAsset, TemplateFolder } from './types';
 
 // Initial Mock Data (Translated)
@@ -276,6 +277,8 @@ function App() {
             addToHistory={addToHistory}
           />
         );
+      case 'scout':
+        return <ContentScout brands={brands} addToHistory={addToHistory} />;
       case 'bulk':
         return <BulkGenerator brands={brands} addToHistory={addToHistory} />;
       case 'library':
