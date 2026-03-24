@@ -205,7 +205,8 @@ export const generateBrandedImage = async (
   referenceImageBase64: string | null,
   productImageBase64: string | null,
   contextDescription: string,
-  aspectRatio: string = "1:1"
+  aspectRatio: string = "1:1",
+  designDirective?: string
 ): Promise<string> => {
   if (window.aistudio && window.aistudio.hasSelectedApiKey) {
       const hasKey = await window.aistudio.hasSelectedApiKey();
@@ -292,6 +293,14 @@ export const generateBrandedImage = async (
     ${ctaInstruction}
 
     6. KALİTE: Fotoğraf gerçekçiliğinde (photorealistic) veya referansın stilinde, 4K kalite.
+
+    ${designDirective ? `
+    *** PROFESYONEL TASARIM DİREKTİFLERİ (KRİTİK - MUTLAKA UYGULA) ***
+    Aşağıdaki direktifler dünya çapında ödüllü bir Kreatif Direktör tarafından hazırlandı.
+    Bu kurallara harfiyen uy:
+
+    ${designDirective}
+    ` : ''}
   `;
 
   // Construct parts array properly handling multiple images
@@ -669,104 +678,117 @@ export const generatePipelineTopics = async (
 };
 
 // ══════════════════════════════════════════════════
-// 8. Design Review Agent - World-class design eye
+// 8. Design Directives Agent - Pre-generation quality boost
+// Generates detailed design instructions BEFORE image generation
 // ══════════════════════════════════════════════════
-export interface DesignReview {
-  score: number; // 0-100
-  needsRevision: boolean;
-  issues: string[];
-  revisionPrompt: string; // auto-generated revision instructions
+export interface DesignDirectives {
+  typographyRules: string;
+  colorStrategy: string;
+  compositionGuide: string;
+  hierarchyPlan: string;
+  fullDirective: string; // Combined directive to inject into generation prompt
 }
 
-export const reviewDesignQuality = async (
-  imageBase64: string,
+export const generateDesignDirectives = async (
   brand: Brand,
-  topic: string
-): Promise<DesignReview> => {
+  topic: string,
+  style: StyleAnalysis,
+  aspectRatio: string
+): Promise<DesignDirectives> => {
   const ai = getAI();
 
+  const formatMap: Record<string, string> = {
+    '1:1': 'Instagram kare post (1080x1080)',
+    '4:5': 'Instagram portre post (1080x1350)',
+    '9:16': 'Instagram/TikTok Story (1080x1920)',
+    '16:9': 'YouTube thumbnail / LinkedIn banner (1920x1080)',
+  };
+  const format = formatMap[aspectRatio] || 'sosyal medya gönderi';
+
   const prompt = `
-    Sen dünyanın en prestijli reklam ajanslarında çalışmış, Cannes Lions, D&AD, One Show ödüllü bir
-    Kreatif Direktörsün. Elindeki görseli profesyonel bir tasarım denetimine tabi tut.
+    Sen Cannes Lions, D&AD ve One Show ödüllü, dünyanın en iyi reklam ajanslarında çalışmış
+    bir Kreatif Direktörsün. Şimdi bir AI görsel üretim modeline verilecek TASARIM DİREKTİFLERİ yazıyorsun.
 
-    MARKA: ${brand.name} (${brand.industry})
+    MARKA: ${brand.name}
+    SEKTÖR: ${brand.industry}
+    ${brand.description ? `AÇIKLAMA: ${brand.description}` : ''}
+    TON: ${brand.tone}
+    RENK PALETİ: ${brand.palette.map(c => `${c.name}: ${c.hex}`).join(', ')}
+
     KONU: ${topic}
-    MARKA RENKLERİ: ${brand.palette.map(c => `${c.name}: ${c.hex}`).join(', ')}
+    FORMAT: ${format} (${aspectRatio})
 
-    AŞAĞIDAKİ KRİTERLERE GÖRE DEĞERLENDİR (her biri 0-100):
+    REFERANS STİL:
+    - Kompozisyon: ${style.composition}
+    - Işık: ${style.lighting}
+    - Artistik Stil: ${style.artisticStyle}
+    - Arka Plan: ${style.backgroundDetails}
 
-    1. TİPOGRAFİ (Ağırlık: %20)
-       - Font seçimi marka tonuna uygun mu?
-       - Okunabilirlik: boyut, kontrast, satır aralığı
-       - Hiyerarşi: başlık > alt başlık > gövde metin düzgün mü?
-       - Metin hizalama ve boşluklar tutarlı mı?
-       - Yazım/gramer hatası var mı?
+    Aşağıdaki 4 alan için SON DERECE SPESİFİK ve UYGULANABILIR tasarım direktifleri yaz.
+    Bu direktifler doğrudan bir görsel üretim AI'ına verilecek — o yüzden "yap", "kullan", "yerleştir" gibi
+    emir kipiyle yaz. Soyut tavsiye değil, somut talimat ver.
 
-    2. GÖRSEL HİYERARŞİ & KOMPOZİSYON (Ağırlık: %25)
-       - Göz akışı mantıklı mı? (Z-pattern, F-pattern veya merkezi odak)
-       - Ana mesaj ilk 2 saniyede okunabiliyor mu?
-       - CTA (call-to-action) yeterince belirgin mi?
-       - Boşluk (whitespace) dengesi: sıkışık mı yoksa çok boş mu?
-       - Öğeler arası alignment (hizalama) düzgün mü?
+    1. TİPOGRAFİ KURALLARI:
+       - Başlık fontu stili (sans-serif bold, serif elegant, vb.) ve yaklaşık boyut oranı
+       - Alt metin stili ve boyut oranı
+       - Metin rengi (marka paletinden spesifik hex kodu belirt)
+       - Metin konumu (üst/orta/alt, sağ/sol/merkez)
+       - Okunabilirlik için minimum kontrast oranı
+       - Maksimum kelime sayısı (başlık: X kelime, alt metin: Y kelime)
 
-    3. RENK DAĞILIMI & MARKA UYUMU (Ağırlık: %25)
-       - Marka renkleri doğru kullanılmış mı? (60-30-10 kuralı)
-       - Kontrast yeterli mi? (WCAG standartları)
-       - Renk harmonisi sağlanmış mı?
-       - Marka kimliğiyle uyumlu mu?
-       - Logo görünür ve doğru konumda mı?
+    2. RENK STRATEJİSİ:
+       - 60-30-10 kuralına göre: hangi renk %60 (dominant), %30 (ikincil), %10 (vurgu)
+       - Arka plan rengi (spesifik hex)
+       - Metin üzerinde kontrast sağlayacak zemin rengi
+       - Gradient kullanılacaksa yönü ve renkleri
+       - Hangi öğeler hangi renkte olacak
 
-    4. GENEL TASARIM KALİTESİ (Ağırlık: %30)
-       - Profesyonel görünüm: ajans kalitesinde mi yoksa amatör mü?
-       - Görsel netlik ve çözünürlük
-       - Tutarlılık: tüm öğeler bir bütün oluşturuyor mu?
-       - Sektöre uygunluk (${brand.industry})
-       - Sosyal medya platformuna uygunluk
-       - Duygusal etki ve dikkat çekicilik
+    3. KOMPOZİSYON REHBERİ:
+       - Göz akış paterni (Z-pattern, F-pattern, merkezi odak, vb.)
+       - Ana odak noktası nerede olmalı (üçte bir kuralı vb.)
+       - Boşluk (whitespace) dengesi — kenar boşlukları yüzde olarak
+       - Logo konumu ve boyutu (köşe + yaklaşık %X alan)
+       - Öğelerin hizalama ekseni
 
-    PUANLAMA: 85+ = mükemmel (revizyon gerekmez), 70-84 = iyi ama iyileştirilebilir, <70 = revizyon gerekli.
+    4. HİYERARŞİ PLANI:
+       - Görsel hiyerarşi sırası: 1. göz çekecek öğe, 2. ana mesaj, 3. detaylar, 4. CTA/logo
+       - Her öğenin relatif boyutu (en büyük → en küçük)
+       - Dikkat çekici element ne olmalı (illüstrasyon, fotoğraf, tipografi, ikon?)
+       - CTA butonu varsa: metin, şekil, renk, konum
 
-    ÖNEMLİ: Eğer puan 85'in altındaysa, tespit ettiğin sorunları düzeltmek için Türkçe,
-    net ve spesifik bir revizyon talimatı yaz. Bu talimat doğrudan bir görsel düzenleme AI'ına
-    gönderilecek, o yüzden "şunu yap, bunu değiştir" formatında yaz.
+    SON OLARAK: Yukarıdaki 4 bölümü tek bir akıcı paragraf halinde birleştirerek
+    "fullDirective" alanına yaz. Bu paragraf doğrudan prompt'a enjekte edilecek.
   `;
 
   const response = await ai.models.generateContent({
     model: 'gemini-2.5-flash',
-    contents: [
-      {
-        parts: [
-          { inlineData: { mimeType: 'image/png', data: imageBase64 } },
-          { text: prompt }
-        ]
-      }
-    ],
+    contents: prompt,
     config: {
       responseMimeType: 'application/json',
       responseSchema: {
         type: Type.OBJECT,
         properties: {
-          score: { type: Type.NUMBER },
-          needsRevision: { type: Type.BOOLEAN },
-          issues: {
-            type: Type.ARRAY,
-            items: { type: Type.STRING },
-          },
-          revisionPrompt: { type: Type.STRING },
+          typographyRules: { type: Type.STRING },
+          colorStrategy: { type: Type.STRING },
+          compositionGuide: { type: Type.STRING },
+          hierarchyPlan: { type: Type.STRING },
+          fullDirective: { type: Type.STRING },
         },
-        required: ['score', 'needsRevision', 'issues', 'revisionPrompt'],
+        required: ['typographyRules', 'colorStrategy', 'compositionGuide', 'hierarchyPlan', 'fullDirective'],
       },
     },
   });
 
   const text = response.text;
-  if (!text) return { score: 75, needsRevision: true, issues: ['Değerlendirme yapılamadı'], revisionPrompt: 'Genel kaliteyi artır, tipografiyi iyileştir, renk dengesini düzelt.' };
+  if (!text) {
+    return {
+      typographyRules: '',
+      colorStrategy: '',
+      compositionGuide: '',
+      hierarchyPlan: '',
+      fullDirective: '',
+    };
+  }
 
-  const parsed = JSON.parse(text);
-  return {
-    score: parsed.score ?? 75,
-    needsRevision: parsed.needsRevision ?? (parsed.score < 85),
-    issues: parsed.issues || [],
-    revisionPrompt: parsed.revisionPrompt || '',
-  };
+  return JSON.parse(text);
 };
