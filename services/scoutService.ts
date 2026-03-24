@@ -4,7 +4,36 @@ import { analyzeImageStyle, generateBrandedImage } from './geminiService';
 const SUPABASE_URL = 'https://yvsvxurquhtzaeuszwtb.supabase.co';
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inl2c3Z4dXJxdWh0emFldXN6d3RiIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQzNDE2MjAsImV4cCI6MjA4OTkxNzYyMH0.7xSR9mazaNDOmsTbotldB_yO3utM_UlDHyglOzmF1nI';
 
+// Backend endpoints - Python scraper (primary) → Supabase Edge Function (fallback)
+const SCRAPER_URL = 'http://localhost:8899';
 const EDGE_FN_URL = `${SUPABASE_URL}/functions/v1/content-scout`;
+
+// Detect which backend is available
+let _backendUrl: string | null = null;
+
+async function getBackendUrl(): Promise<string> {
+  if (_backendUrl) return _backendUrl;
+
+  // Try Python scraper first (Scrapling - better anti-bot)
+  try {
+    const resp = await fetch(`${SCRAPER_URL}/health`, { signal: AbortSignal.timeout(2000) });
+    if (resp.ok) {
+      _backendUrl = SCRAPER_URL;
+      console.log('🔍 Scout: Using Python Scrapling backend');
+      return _backendUrl;
+    }
+  } catch {}
+
+  // Fallback to Supabase Edge Function
+  _backendUrl = EDGE_FN_URL;
+  console.log('🔍 Scout: Using Supabase Edge Function backend');
+  return _backendUrl;
+}
+
+// Reset backend detection (e.g., if Python server starts later)
+export function resetBackendDetection() {
+  _backendUrl = null;
+}
 
 // Supabase REST API helper
 async function supabaseRest(table: string, method: string, body?: any, query?: string) {
@@ -37,15 +66,29 @@ async function supabaseRest(table: string, method: string, body?: any, query?: s
 // Search for inspiration images
 export async function searchInspiration(
   query: string,
-  sources: string[] = ['pexels', 'pinterest', 'web'],
+  sources: string[] = ['duckduckgo', 'pinterest', 'google'],
   industry?: string
-): Promise<{ results: ScoutResult[]; sourcesUsed: { pexels: boolean; google: boolean } }> {
+): Promise<{ results: ScoutResult[]; sourcesReport: Record<string, number> }> {
+  const backend = await getBackendUrl();
+
   try {
-    const resp = await fetch(EDGE_FN_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action: 'search', query, sources, industry }),
-    });
+    let resp: Response;
+
+    if (backend === SCRAPER_URL) {
+      // Python FastAPI endpoint
+      resp = await fetch(`${backend}/search`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ query, sources, industry: industry || '' }),
+      });
+    } else {
+      // Supabase Edge Function
+      resp = await fetch(backend, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'search', query, sources, industry: industry || '' }),
+      });
+    }
 
     if (!resp.ok) throw new Error(`Search failed: ${resp.status}`);
     const data = await resp.json();
@@ -55,21 +98,38 @@ export async function searchInspiration(
         ...r,
         id: `scout-${Date.now()}-${i}`,
       })),
-      sourcesUsed: data.sources_used || { pexels: false, google: false },
+      sourcesReport: data.sources_report || {},
     };
   } catch (err) {
     console.error('Scout search error:', err);
-    return { results: [], sourcesUsed: { pexels: false, google: false } };
+    // If Python failed, try Edge Function as fallback
+    if (backend === SCRAPER_URL) {
+      _backendUrl = null;
+      console.log('Scrapling backend failed, trying Edge Function...');
+      return searchInspiration(query, sources, industry);
+    }
+    return { results: [], sourcesReport: {} };
   }
 }
 
 // Download an image via proxy (CORS bypass)
 export async function downloadImage(imageUrl: string): Promise<{ base64: string; mimeType: string }> {
-  const resp = await fetch(EDGE_FN_URL, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ action: 'proxy', url: imageUrl }),
-  });
+  const backend = await getBackendUrl();
+
+  let resp: Response;
+  if (backend === SCRAPER_URL) {
+    resp = await fetch(`${backend}/proxy`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url: imageUrl }),
+    });
+  } else {
+    resp = await fetch(backend, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'proxy', url: imageUrl }),
+    });
+  }
 
   if (!resp.ok) throw new Error(`Proxy failed: ${resp.status}`);
   return resp.json();
@@ -157,18 +217,48 @@ export async function deleteInspiration(id: string) {
   await supabaseRest('scout_inspirations', 'DELETE', undefined, `id=eq.${id}`);
 }
 
-// Check edge function health
-export async function checkScoutHealth(): Promise<{ status: string; sources: { pexels: boolean; google_cse: boolean } }> {
+// Check scout health - tries both backends
+export async function checkScoutHealth(): Promise<{
+  status: string;
+  backend: string;
+  sources: Record<string, boolean>;
+}> {
+  // Try Python scraper
+  try {
+    const resp = await fetch(`${SCRAPER_URL}/health`, { signal: AbortSignal.timeout(3000) });
+    if (resp.ok) {
+      const data = await resp.json();
+      return {
+        status: 'ok',
+        backend: 'scrapling',
+        sources: {
+          duckduckgo: true,
+          pinterest: true,
+          google: true,
+          ...Object.fromEntries((data.sources || []).map((s: string) => [s, true])),
+        },
+      };
+    }
+  } catch {}
+
+  // Try Edge Function
   try {
     const resp = await fetch(EDGE_FN_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ action: 'health' }),
     });
-    return resp.json();
-  } catch {
-    return { status: 'error', sources: { pexels: false, google_cse: false } };
-  }
+    if (resp.ok) {
+      const data = await resp.json();
+      return {
+        status: 'ok',
+        backend: 'edge-function',
+        sources: data.sources || {},
+      };
+    }
+  } catch {}
+
+  return { status: 'offline', backend: 'none', sources: {} };
 }
 
 // Helper: map DB row to ScoutInspiration
@@ -200,7 +290,6 @@ export function generateSearchQueries(brand: Brand): string[] {
     'Sınava Hazırlık': ['education motivation post', 'exam preparation design', 'student success social media', 'tutoring center marketing'],
   };
 
-  // Find matching industry keywords
   const queries: string[] = [];
   for (const [key, values] of Object.entries(industryMap)) {
     if (brand.industry.toLowerCase().includes(key.toLowerCase())) {
@@ -209,7 +298,6 @@ export function generateSearchQueries(brand: Brand): string[] {
     }
   }
 
-  // Add generic queries if no match
   if (queries.length === 0) {
     queries.push(
       `${brand.industry} social media post design`,

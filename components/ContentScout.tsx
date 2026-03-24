@@ -11,6 +11,7 @@ import {
   deleteInspiration,
   checkScoutHealth,
   generateSearchQueries,
+  resetBackendDetection,
 } from '../services/scoutService';
 
 interface ContentScoutProps {
@@ -30,19 +31,22 @@ const ContentScout: React.FC<ContentScoutProps> = ({ brands, addToHistory }) => 
   const [readyInspirations, setReadyInspirations] = useState<ScoutInspiration[]>([]);
   const [isSearching, setIsSearching] = useState(false);
   const [processingIds, setProcessingIds] = useState<Set<string>>(new Set());
-  const [healthStatus, setHealthStatus] = useState<{ pexels: boolean; google_cse: boolean } | null>(null);
+  const [healthStatus, setHealthStatus] = useState<{ backend: string; sources: Record<string, boolean> } | null>(null);
   const [selectedResults, setSelectedResults] = useState<Set<string>>(new Set());
   const [adaptProgress, setAdaptProgress] = useState<Record<string, { step: string; progress: number }>>({});
   const [previewImage, setPreviewImage] = useState<string | null>(null);
   const [aspectRatio, setAspectRatio] = useState('1:1');
   const [adaptTopic, setAdaptTopic] = useState('');
-  const [sourcesUsed, setSourcesUsed] = useState<{ pexels: boolean; google: boolean }>({ pexels: false, google: false });
+  const [sourcesReport, setSourcesReport] = useState<Record<string, number>>({});
   const [suggestedQueries, setSuggestedQueries] = useState<string[]>([]);
 
-  // Check edge function health on mount
-  useEffect(() => {
-    checkScoutHealth().then(h => setHealthStatus(h.sources));
+  // Check backend health on mount
+  const refreshHealth = useCallback(() => {
+    resetBackendDetection();
+    checkScoutHealth().then(h => setHealthStatus({ backend: h.backend, sources: h.sources }));
   }, []);
+
+  useEffect(() => { refreshHealth(); }, [refreshHealth]);
 
   // Generate suggested queries when brand changes
   useEffect(() => {
@@ -74,13 +78,13 @@ const ContentScout: React.FC<ContentScoutProps> = ({ brands, addToHistory }) => 
     setSelectedResults(new Set());
 
     try {
-      const { results, sourcesUsed: su } = await searchInspiration(
+      const { results, sourcesReport: sr } = await searchInspiration(
         q,
-        ['pexels', 'pinterest', 'web'],
+        ['duckduckgo', 'pinterest', 'google'],
         selectedBrand?.industry
       );
       setSearchResults(results);
-      setSourcesUsed(su);
+      setSourcesReport(sr);
     } catch (err) {
       console.error('Search error:', err);
     } finally {
@@ -229,14 +233,21 @@ const ContentScout: React.FC<ContentScoutProps> = ({ brands, addToHistory }) => 
         {/* Health indicator */}
         {healthStatus && (
           <div className="flex items-center gap-3 text-xs">
-            <div className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full ${healthStatus.pexels ? 'bg-emerald-500/10 text-emerald-400' : 'bg-red-500/10 text-red-400'}`}>
-              <div className={`w-1.5 h-1.5 rounded-full ${healthStatus.pexels ? 'bg-emerald-400' : 'bg-red-400'}`} />
-              Pexels
+            <div className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full ${
+              healthStatus.backend !== 'none' ? 'bg-emerald-500/10 text-emerald-400' : 'bg-red-500/10 text-red-400'
+            }`}>
+              <div className={`w-1.5 h-1.5 rounded-full ${healthStatus.backend !== 'none' ? 'bg-emerald-400' : 'bg-red-400'}`} />
+              {healthStatus.backend === 'scrapling' ? 'Scrapling' : healthStatus.backend === 'edge-function' ? 'Edge Fn' : 'Çevrimdışı'}
             </div>
-            <div className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full ${healthStatus.google_cse ? 'bg-emerald-500/10 text-emerald-400' : 'bg-amber-500/10 text-amber-400'}`}>
-              <div className={`w-1.5 h-1.5 rounded-full ${healthStatus.google_cse ? 'bg-emerald-400' : 'bg-amber-400'}`} />
-              Google/Pinterest
-            </div>
+            {Object.entries(healthStatus.sources).filter(([, v]) => v).map(([name]) => (
+              <div key={name} className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-500/10 text-emerald-400">
+                <div className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+                {name}
+              </div>
+            ))}
+            <button onClick={refreshHealth} className="p-1 text-slate-500 hover:text-white transition-colors" title="Yeniden kontrol et">
+              <RefreshCw size={12} />
+            </button>
           </div>
         )}
       </div>
@@ -384,8 +395,16 @@ const ContentScout: React.FC<ContentScoutProps> = ({ brands, addToHistory }) => 
               <div className="flex items-center justify-between mb-4">
                 <p className="text-sm text-slate-400">
                   {searchResults.length} sonuç bulundu
-                  {sourcesUsed.pexels && <span className="ml-2 text-xs bg-purple-500/10 text-purple-400 px-2 py-0.5 rounded-full">Pexels</span>}
-                  {sourcesUsed.google && <span className="ml-2 text-xs bg-blue-500/10 text-blue-400 px-2 py-0.5 rounded-full">Google</span>}
+                  {Object.entries(sourcesReport).map(([source, count]) => (
+                    <span key={source} className={`ml-2 text-xs px-2 py-0.5 rounded-full ${
+                      source === 'pinterest' ? 'bg-red-500/10 text-red-300' :
+                      source === 'duckduckgo' ? 'bg-amber-500/10 text-amber-300' :
+                      source === 'google' ? 'bg-blue-500/10 text-blue-300' :
+                      'bg-purple-500/10 text-purple-300'
+                    }`}>
+                      {source}: {count}
+                    </span>
+                  ))}
                 </p>
                 {selectedResults.size > 0 && (
                   <button
@@ -691,18 +710,20 @@ const ContentScout: React.FC<ContentScoutProps> = ({ brands, addToHistory }) => 
       )}
 
       {/* Setup hint */}
-      {healthStatus && !healthStatus.pexels && !healthStatus.google_cse && (
+      {healthStatus && healthStatus.backend === 'none' && (
         <div className="mt-8 bg-amber-500/10 border border-amber-500/20 rounded-xl p-4 flex items-start gap-3">
           <AlertCircle size={20} className="text-amber-400 shrink-0 mt-0.5" />
           <div>
-            <p className="text-amber-300 text-sm font-medium">API Anahtarları Gerekli</p>
+            <p className="text-amber-300 text-sm font-medium">Scraping Backend Gerekli</p>
             <p className="text-amber-400/70 text-xs mt-1">
-              Arama yapabilmek için Supabase Edge Function'a API anahtarlarını eklemelisiniz:
+              Arama yapabilmek için Python scraper'ı başlatın:
             </p>
-            <ul className="text-amber-400/70 text-xs mt-2 space-y-1 list-disc list-inside">
-              <li><strong>PEXELS_API_KEY</strong> — Pexels'dan ücretsiz alın (pexels.com/api)</li>
-              <li><strong>GOOGLE_API_KEY</strong> + <strong>GOOGLE_CSE_ID</strong> — Google/Pinterest araması için</li>
-            </ul>
+            <pre className="mt-2 bg-black/30 rounded-lg p-3 text-xs text-emerald-300 font-mono">
+              python3 scraper/server.py
+            </pre>
+            <p className="text-amber-400/70 text-xs mt-2">
+              Scrapling ile Pinterest, Google ve DuckDuckGo'dan görseller taranır. API key gerekmez.
+            </p>
           </div>
         </div>
       )}
