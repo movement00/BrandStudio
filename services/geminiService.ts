@@ -395,7 +395,7 @@ export const reviseGeneratedImage = async (
 
   const candidates = response.candidates;
   if (!candidates || candidates.length === 0) throw new Error("Revize işlemi başarısız.");
-  
+
   const contentParts = candidates[0].content.parts;
   const imagePart = contentParts.find(p => p.inlineData);
 
@@ -404,4 +404,158 @@ export const reviseGeneratedImage = async (
   }
 
   return imagePart.inlineData.data;
+};
+
+// ══════════════════════════════════════════════════
+// 5. Smart Scout: Generate search queries for brand
+// ══════════════════════════════════════════════════
+export const generateSmartSearchQueries = async (brand: Brand): Promise<string[]> => {
+  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+
+  const prompt = `
+    Sen dünya çapında bir sosyal medya tasarım uzmanısın. Aşağıdaki marka için Pinterest, Google ve Dribbble'da arama yaparak en iyi sosyal medya gönderi tasarımlarını bulmak istiyorum.
+
+    MARKA BİLGİSİ:
+    - İsim: ${brand.name}
+    - Sektör: ${brand.industry}
+    - Açıklama: ${brand.description || 'Yok'}
+    - Ton: ${brand.tone}
+    - Renkler: ${brand.palette.map(c => `${c.name} (${c.hex})`).join(', ')}
+
+    GÖREV: Bu markanın sosyal medya içeriklerinde kullanabileceği EN İYİ referans tasarımları bulmak için İngilizce arama sorguları üret.
+
+    KURALLAR:
+    1. Sektöre özel, kaliteli tasarım bulmaya odaklan
+    2. Genel "social media" aramaları YAPMA - çok spesifik ol
+    3. Farklı içerik türleri için sorgular üret (tanıtım, kampanya, bilgi, motivasyon, ürün)
+    4. Dribbble/Behance kalitesinde tasarımları hedefle
+    5. Her sorgu İngilizce olmalı
+    6. 8-12 sorgu üret
+
+    Örnek kötü sorgu: "social media post design" (çok genel)
+    Örnek iyi sorgu: "esim travel promotion instagram story premium design" (spesifik)
+  `;
+
+  const response = await ai.models.generateContent({
+    model: 'gemini-2.5-flash-preview-05-20',
+    contents: prompt,
+    config: {
+      responseMimeType: 'application/json',
+      responseSchema: {
+        type: Type.OBJECT,
+        properties: {
+          queries: {
+            type: Type.ARRAY,
+            items: { type: Type.STRING },
+          },
+          reasoning: { type: Type.STRING },
+        },
+        required: ['queries'],
+      },
+    },
+  });
+
+  const text = response.text;
+  if (!text) return [];
+  const parsed = JSON.parse(text);
+  return parsed.queries || [];
+};
+
+// ══════════════════════════════════════════════════
+// 6. Smart Scout: Score images by design quality + brand relevance
+// ══════════════════════════════════════════════════
+export const scoreDesignQuality = async (
+  imagesBase64: string[],
+  brand: Brand
+): Promise<{ scores: number[]; reasons: string[] }> => {
+  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+
+  const parts: any[] = [];
+
+  imagesBase64.forEach((img, i) => {
+    parts.push({ inlineData: { mimeType: 'image/jpeg', data: img } });
+    parts.push({ text: `[Görsel ${i + 1}]` });
+  });
+
+  parts.push({
+    text: `
+    Sen profesyonel bir sanat yönetmeni ve sosyal medya tasarım uzmanısın.
+    Yukarıdaki ${imagesBase64.length} görseli aşağıdaki MARKA için değerlendir.
+
+    MARKA: ${brand.name}
+    SEKTÖR: ${brand.industry}
+    TON: ${brand.tone}
+
+    HER GÖRSELİ ŞU KRİTERLERE GÖRE 0-100 ARASI PUANLA:
+
+    1. TASARIM KALİTESİ (40 puan):
+       - Profesyonel kompozisyon ve layout
+       - Tipografi kalitesi
+       - Renk uyumu ve kontrast
+       - Görsel hiyerarşi
+       - Genel estetik
+
+    2. MARKA UYUMU (30 puan):
+       - Bu sektöre uygunluk (${brand.industry})
+       - Markanın tonuna yakınlık (${brand.tone})
+       - Hedef kitleye hitap etme
+       - Uyarlanabilirlik potansiyeli
+
+    3. TREND & GÜNCELLIK (15 puan):
+       - Modern tasarım trendlerine uyum
+       - 2024-2025 sosyal medya estetiği
+       - Dikkat çekicilik
+
+    4. TEKNİK KALİTE (15 puan):
+       - Çözünürlük ve netlik
+       - Profesyonel üretim kalitesi
+       - Stok fotoğraf DEĞİL, özgün tasarım olması
+
+    DÜŞÜK PUAN VER: Stok fotoğraflar, düşük kaliteli tasarımlar, sektörle alakasız görseller, amatör çalışmalar.
+    YÜKSEK PUAN VER: Dribbble/Behance kalitesinde, sektöre uygun, modern, ilham verici tasarımlar.
+  `,
+  });
+
+  const response = await ai.models.generateContent({
+    model: 'gemini-2.5-flash-preview-05-20',
+    contents: { parts },
+    config: {
+      responseMimeType: 'application/json',
+      responseSchema: {
+        type: Type.OBJECT,
+        properties: {
+          evaluations: {
+            type: Type.ARRAY,
+            items: {
+              type: Type.OBJECT,
+              properties: {
+                imageIndex: { type: Type.NUMBER },
+                score: { type: Type.NUMBER },
+                reason: { type: Type.STRING },
+              },
+              required: ['imageIndex', 'score', 'reason'],
+            },
+          },
+        },
+        required: ['evaluations'],
+      },
+    },
+  });
+
+  const text = response.text;
+  if (!text) return { scores: imagesBase64.map(() => 50), reasons: imagesBase64.map(() => 'Değerlendirilemedi') };
+
+  const parsed = JSON.parse(text);
+  const evals = parsed.evaluations || [];
+
+  const scores = imagesBase64.map((_, i) => {
+    const ev = evals.find((e: any) => e.imageIndex === i);
+    return ev?.score ?? 50;
+  });
+  const reasons = imagesBase64.map((_, i) => {
+    const ev = evals.find((e: any) => e.imageIndex === i);
+    return ev?.reason ?? '';
+  });
+
+  return { scores, reasons };
 };

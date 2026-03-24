@@ -12,6 +12,7 @@ import {
   checkScoutHealth,
   generateSearchQueries,
   resetBackendDetection,
+  scoreAndRankResults,
 } from '../services/scoutService';
 
 interface ContentScoutProps {
@@ -39,6 +40,10 @@ const ContentScout: React.FC<ContentScoutProps> = ({ brands, addToHistory }) => 
   const [adaptTopic, setAdaptTopic] = useState('');
   const [sourcesReport, setSourcesReport] = useState<Record<string, number>>({});
   const [suggestedQueries, setSuggestedQueries] = useState<string[]>([]);
+  const [isGeneratingQueries, setIsGeneratingQueries] = useState(false);
+  const [isScoring, setIsScoring] = useState(false);
+  const [scoringProgress, setScoringProgress] = useState<{ done: number; total: number } | null>(null);
+  const [scoredResults, setScoredResults] = useState<Map<string, { score: number; reason: string }>>(new Map());
 
   // Check backend health on mount
   const refreshHealth = useCallback(() => {
@@ -48,10 +53,14 @@ const ContentScout: React.FC<ContentScoutProps> = ({ brands, addToHistory }) => 
 
   useEffect(() => { refreshHealth(); }, [refreshHealth]);
 
-  // Generate suggested queries when brand changes
+  // Generate AI-powered suggested queries when brand changes
   useEffect(() => {
     if (selectedBrand) {
-      setSuggestedQueries(generateSearchQueries(selectedBrand));
+      setIsGeneratingQueries(true);
+      setSuggestedQueries([]);
+      generateSearchQueries(selectedBrand)
+        .then(queries => setSuggestedQueries(queries))
+        .finally(() => setIsGeneratingQueries(false));
     }
   }, [selectedBrand]);
 
@@ -363,21 +372,33 @@ const ContentScout: React.FC<ContentScoutProps> = ({ brands, addToHistory }) => 
             </button>
           </div>
 
-          {/* Suggested queries */}
-          {suggestedQueries.length > 0 && searchResults.length === 0 && !isSearching && (
+          {/* Suggested queries - AI generated */}
+          {searchResults.length === 0 && !isSearching && (
             <div className="mb-6">
-              <p className="text-xs text-slate-500 mb-2">Önerilen aramalar ({selectedBrand?.name}):</p>
-              <div className="flex flex-wrap gap-2">
-                {suggestedQueries.map((q, i) => (
-                  <button
-                    key={i}
-                    onClick={() => { setSearchQuery(q); handleSearch(q); }}
-                    className="px-3 py-1.5 bg-lumina-800 text-slate-300 text-xs rounded-full hover:bg-lumina-700 hover:text-white transition-colors"
-                  >
-                    {q}
-                  </button>
-                ))}
-              </div>
+              {isGeneratingQueries ? (
+                <div className="flex items-center gap-2 text-xs text-slate-500">
+                  <Loader2 size={14} className="animate-spin text-lumina-gold" />
+                  <span>Gemini markayı analiz edip akıllı aramalar üretiyor...</span>
+                </div>
+              ) : suggestedQueries.length > 0 ? (
+                <>
+                  <p className="text-xs text-slate-500 mb-2 flex items-center gap-1.5">
+                    <Sparkles size={12} className="text-lumina-gold" />
+                    AI önerilen aramalar ({selectedBrand?.name}):
+                  </p>
+                  <div className="flex flex-wrap gap-2">
+                    {suggestedQueries.map((q, i) => (
+                      <button
+                        key={i}
+                        onClick={() => { setSearchQuery(q); handleSearch(q); }}
+                        className="px-3 py-1.5 bg-lumina-800 text-slate-300 text-xs rounded-full hover:bg-lumina-700 hover:text-white transition-colors"
+                      >
+                        {q}
+                      </button>
+                    ))}
+                  </div>
+                </>
+              ) : null}
             </div>
           )}
 
@@ -406,20 +427,66 @@ const ContentScout: React.FC<ContentScoutProps> = ({ brands, addToHistory }) => 
                     </span>
                   ))}
                 </p>
-                {selectedResults.size > 0 && (
+                <div className="flex gap-2">
+                  {/* AI Score Button */}
                   <button
-                    onClick={handleDownloadSelected}
-                    disabled={processingIds.size > 0}
-                    className="flex items-center gap-2 px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-500 transition-colors text-sm font-medium disabled:opacity-50"
+                    onClick={async () => {
+                      if (!selectedBrand || isScoring) return;
+                      setIsScoring(true);
+                      setScoringProgress({ done: 0, total: searchResults.length });
+                      try {
+                        const scored = await scoreAndRankResults(
+                          searchResults,
+                          selectedBrand,
+                          6,
+                          (done, total) => setScoringProgress({ done, total })
+                        );
+                        const newScores = new Map<string, { score: number; reason: string }>();
+                        const reordered: ScoutResult[] = [];
+                        scored.forEach(s => {
+                          newScores.set(s.result.id, { score: s.score, reason: s.reason });
+                          reordered.push(s.result);
+                        });
+                        setScoredResults(newScores);
+                        setSearchResults(reordered);
+                      } catch (err) {
+                        console.error('Scoring failed:', err);
+                      } finally {
+                        setIsScoring(false);
+                        setScoringProgress(null);
+                      }
+                    }}
+                    disabled={isScoring || searchResults.length === 0}
+                    className="flex items-center gap-1.5 px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-500 transition-colors text-sm font-medium disabled:opacity-50"
                   >
-                    {processingIds.size > 0 ? (
-                      <Loader2 size={16} className="animate-spin" />
+                    {isScoring ? (
+                      <>
+                        <Loader2 size={16} className="animate-spin" />
+                        {scoringProgress && `${scoringProgress.done}/${scoringProgress.total}`}
+                      </>
                     ) : (
-                      <Download size={16} />
+                      <>
+                        <Sparkles size={16} />
+                        AI Puanla
+                      </>
                     )}
-                    {selectedResults.size} Görseli İndir & Kaydet
                   </button>
-                )}
+
+                  {selectedResults.size > 0 && (
+                    <button
+                      onClick={handleDownloadSelected}
+                      disabled={processingIds.size > 0}
+                      className="flex items-center gap-2 px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-500 transition-colors text-sm font-medium disabled:opacity-50"
+                    >
+                      {processingIds.size > 0 ? (
+                        <Loader2 size={16} className="animate-spin" />
+                      ) : (
+                        <Download size={16} />
+                      )}
+                      {selectedResults.size} Görseli İndir & Kaydet
+                    </button>
+                  )}
+                </div>
               </div>
 
               <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
@@ -463,15 +530,27 @@ const ContentScout: React.FC<ContentScoutProps> = ({ brands, addToHistory }) => 
                         )}
                       </div>
 
-                      {/* Platform badge */}
-                      <div className="absolute bottom-2 left-2">
+                      {/* Platform badge + Score */}
+                      <div className="absolute bottom-2 left-2 flex items-center gap-1">
                         <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${
                           result.platform === 'pexels' ? 'bg-emerald-500/20 text-emerald-300' :
                           result.platform === 'pinterest' ? 'bg-red-500/20 text-red-300' :
+                          result.platform === 'duckduckgo' ? 'bg-amber-500/20 text-amber-300' :
                           'bg-blue-500/20 text-blue-300'
                         }`}>
                           {result.platform}
                         </span>
+                        {scoredResults.has(result.id) && (() => {
+                          const { score, reason } = scoredResults.get(result.id)!;
+                          const color = score >= 75 ? 'bg-emerald-500/90 text-white' :
+                                        score >= 50 ? 'bg-amber-500/90 text-white' :
+                                        'bg-red-500/90 text-white';
+                          return (
+                            <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-bold ${color}`} title={reason}>
+                              {score}
+                            </span>
+                          );
+                        })()}
                       </div>
 
                       {/* Preview button */}

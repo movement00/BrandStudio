@@ -1,5 +1,5 @@
 import { ScoutResult, ScoutInspiration, Brand, StyleAnalysis } from '../types';
-import { analyzeImageStyle, generateBrandedImage } from './geminiService';
+import { analyzeImageStyle, generateBrandedImage, generateSmartSearchQueries, scoreDesignQuality } from './geminiService';
 
 const SUPABASE_URL = 'https://yvsvxurquhtzaeuszwtb.supabase.co';
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inl2c3Z4dXJxdWh0emFldXN6d3RiIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQzNDE2MjAsImV4cCI6MjA4OTkxNzYyMH0.7xSR9mazaNDOmsTbotldB_yO3utM_UlDHyglOzmF1nI';
@@ -279,8 +279,16 @@ function mapDbToInspiration(row: any): ScoutInspiration {
   };
 }
 
-// Generate smart search queries based on brand
-export function generateSearchQueries(brand: Brand): string[] {
+// Generate search queries - AI-powered with static fallback
+export async function generateSearchQueries(brand: Brand): Promise<string[]> {
+  try {
+    const aiQueries = await generateSmartSearchQueries(brand);
+    if (aiQueries.length > 0) return aiQueries;
+  } catch (err) {
+    console.warn('AI query generation failed, using fallback:', err);
+  }
+
+  // Static fallback
   const industryMap: Record<string, string[]> = {
     'Telekomünikasyon': ['tech social media design', 'mobile app promotion post', 'esim travel design', 'telecom marketing visual'],
     'Eğitim': ['education social media post', 'school marketing design', 'student motivation poster', 'academic achievement design'],
@@ -307,4 +315,60 @@ export function generateSearchQueries(brand: Brand): string[] {
   }
 
   return queries;
+}
+
+// AI-powered design quality scoring
+// Downloads images, sends to Gemini for scoring, returns scored results
+export async function scoreAndRankResults(
+  results: ScoutResult[],
+  brand: Brand,
+  batchSize: number = 6,
+  onProgress?: (done: number, total: number) => void
+): Promise<{ result: ScoutResult; score: number; reason: string }[]> {
+  const scored: { result: ScoutResult; score: number; reason: string }[] = [];
+
+  // Process in batches (Gemini multi-image limit)
+  for (let i = 0; i < results.length; i += batchSize) {
+    const batch = results.slice(i, i + batchSize);
+
+    // Download thumbnails for scoring
+    const images: string[] = [];
+    const validResults: ScoutResult[] = [];
+
+    for (const result of batch) {
+      try {
+        const { base64 } = await downloadImage(result.thumbnailUrl || result.imageUrl);
+        images.push(base64);
+        validResults.push(result);
+      } catch {
+        // Skip failed downloads
+      }
+    }
+
+    if (images.length === 0) continue;
+
+    try {
+      const { scores, reasons } = await scoreDesignQuality(images, brand);
+
+      validResults.forEach((result, idx) => {
+        scored.push({
+          result,
+          score: scores[idx] ?? 50,
+          reason: reasons[idx] ?? '',
+        });
+      });
+    } catch (err) {
+      console.error('Scoring batch failed:', err);
+      // Add with default score
+      validResults.forEach(result => {
+        scored.push({ result, score: 50, reason: 'Puanlama başarısız' });
+      });
+    }
+
+    onProgress?.(Math.min(i + batchSize, results.length), results.length);
+  }
+
+  // Sort by score descending
+  scored.sort((a, b) => b.score - a.score);
+  return scored;
 }
