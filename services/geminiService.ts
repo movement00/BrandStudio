@@ -2,6 +2,20 @@
 import { GoogleGenAI, Type } from "@google/genai";
 import { Brand, StyleAnalysis, DesignBlueprint, BlueprintLayer } from "../types";
 
+// Content plan: AI-generated text for each layer
+export interface ContentPlan {
+  layerContents: {
+    layerId: string;
+    originalContent: string;
+    newContent: string;
+    reasoning: string;
+  }[];
+  headline: string;
+  subheadline: string;
+  ctaText: string;
+  brandMessage: string;
+}
+
 // ═══ API Key Management ═══
 const API_KEY_STORAGE = 'lumina_gemini_api_key';
 
@@ -311,6 +325,7 @@ export const decomposeToBlueprint = async (imageBase64: string): Promise<DesignB
 
 // ══════════════════════════════════════════════════════════════
 // 1.2 Reconstruct from Blueprint — Generate image from JSON blueprint
+//     Now accepts ContentPlan + full DesignDirectives
 // ══════════════════════════════════════════════════════════════
 export const reconstructFromBlueprint = async (
   blueprint: DesignBlueprint,
@@ -319,7 +334,8 @@ export const reconstructFromBlueprint = async (
   aspectRatio: string,
   referenceImageBase64: string | null,
   productImageBase64: string | null,
-  designDirective?: string
+  contentPlan?: ContentPlan | null,
+  directives?: DesignDirectives | null
 ): Promise<string> => {
   if (window.aistudio && window.aistudio.hasSelectedApiKey) {
     const hasKey = await window.aistudio.hasSelectedApiKey();
@@ -333,14 +349,23 @@ export const reconstructFromBlueprint = async (
     ? { dominant: brand.palette[0].hex, secondary: brand.palette[1].hex, accent: brand.palette[2].hex }
     : { dominant: brand.primaryColor, secondary: brand.secondaryColor, accent: brand.primaryColor };
 
-  // Remap layers: replace original content with brand content
+  // Remap layers: replace content with AI-planned content and brand colors
   const remappedLayers = blueprint.layers.map(layer => {
     const l = { ...layer, style: { ...layer.style } };
+
+    // Inject content plan into text layers
+    if (contentPlan && (l.type === 'text' || l.type === 'logo')) {
+      const planned = contentPlan.layerContents.find(c => c.layerId === l.id);
+      if (planned) {
+        l.content = planned.newContent;
+      }
+    }
+
     // Remap colors to brand palette
     if (l.type === 'background') {
       l.style.color = brandColors.dominant;
       if (l.style.gradient) {
-        l.style.gradient = l.style.gradient + ` (MARKA RENKLERİYLE DEĞİŞTİR: ${brandColors.dominant} → ${brandColors.secondary})`;
+        l.style.gradient = l.style.gradient + ` (MARKA RENKLERİYLE: ${brandColors.dominant} → ${brandColors.secondary})`;
       }
     }
     return l;
@@ -351,10 +376,7 @@ export const reconstructFromBlueprint = async (
   const formatNote = blueprint.formatAdjustments?.[formatKey] || '';
 
   const blueprintJSON = JSON.stringify({
-    canvas: {
-      ...blueprint.canvas,
-      backgroundColor: brandColors.dominant,
-    },
+    canvas: { ...blueprint.canvas, backgroundColor: brandColors.dominant },
     layout: blueprint.layout,
     layers: remappedLayers,
     typography: blueprint.typography,
@@ -368,48 +390,94 @@ export const reconstructFromBlueprint = async (
     },
   }, null, 2);
 
+  // Build the comprehensive prompt
   const prompt = `
-    GÖREV: Aşağıdaki tasarım blueprint JSON'unu kullanarak, BİREBİR AYNI LAYOUT ve YAPIYLA
-    yeni bir görsel üret. Blueprint bir referans görselden çıkarıldı — aynı yapıyı koruyarak
+    GÖREV: Aşağıdaki tasarım blueprint'ini kullanarak profesyonel bir görsel üret.
+    Blueprint bir referans görselden çıkarıldı. Aynı yapıyı birebir koruyarak
     marka içeriğiyle yeniden oluştur.
 
-    HEDEF MARKA:
+    ═══════════════════════════════════════════════════════════
+    MARKA KİMLİĞİ
+    ═══════════════════════════════════════════════════════════
     İsim: ${brand.name}
     Sektör: ${brand.industry}
     ${brand.description ? `Açıklama: ${brand.description}` : ''}
     Ton: ${brand.tone}
+    ${brand.instagram ? `Instagram: @${brand.instagram}` : ''}
+    ${brand.phone ? `Telefon: ${brand.phone}` : ''}
 
     KONU: ${topic}
     FORMAT: ${aspectRatio}
 
-    ═══ TASARIM BLUEPRINT (BU YAPIYA BİREBİR UYGUN ÜRET) ═══
-    ${blueprintJSON}
     ═══════════════════════════════════════════════════════════
+    TASARIM BLUEPRINT (BU YAPIYA BİREBİR UY)
+    ═══════════════════════════════════════════════════════════
+    ${blueprintJSON}
 
-    KRİTİK KURALLAR:
-    1. LAYOUT BİREBİR AYNI: Her katmanın konumu, boyutu ve hizalaması blueprint'teki gibi olsun.
-       - Metin sol'da ise sol'da kalsın, sağ'da ise sağ'da.
-       - Padding ve boşluklar aynı oranda olsun.
+    ═══════════════════════════════════════════════════════════
+    METİN İÇERİKLERİ (KESİNLİKLE BU METİNLERİ KULLAN)
+    ═══════════════════════════════════════════════════════════
+    ${contentPlan ? contentPlan.layerContents.map(lc =>
+      `• Katman "${lc.layerId}": "${lc.newContent}"`
+    ).join('\n    ') : `Konu "${topic}" için markanın tonuna uygun metin oluştur.`}
+    ${contentPlan ? `
+    Ana Başlık: "${contentPlan.headline}"
+    Alt Başlık: "${contentPlan.subheadline}"
+    CTA: "${contentPlan.ctaText}"
+    Marka Mesajı: "${contentPlan.brandMessage}"` : ''}
 
-    2. RENK DEĞİŞİMİ: Orijinal renkleri KULLANMA. Blueprint'teki renkleri marka renkleriyle değiştirdim:
-       - Dominant (%60): ${brandColors.dominant}
-       - İkincil (%30): ${brandColors.secondary}
-       - Vurgu (%10): ${brandColors.accent}
+    ═══════════════════════════════════════════════════════════
+    RENK PALETİ (SADECE BU RENKLERİ KULLAN)
+    ═══════════════════════════════════════════════════════════
+    ${brand.palette.map(c => `• ${c.name}: ${c.hex}`).join('\n    ')}
+    ${directives ? `
+    Renk Dağılımı:
+    ${directives.colorStrategy}` : `
+    Dominant (%60): ${brandColors.dominant}
+    İkincil (%30): ${brandColors.secondary}
+    Vurgu (%10): ${brandColors.accent}`}
 
-    3. İÇERİK ADAPTASYONU: Metin katmanlarındaki orijinal içeriği "${topic}" konusuna uyarla.
-       Ama YAPI AYNI KALSIN — başlık başlık olarak, alt metin alt metin olarak kalsın.
+    ═══════════════════════════════════════════════════════════
+    KRİTİK KURALLAR
+    ═══════════════════════════════════════════════════════════
+    1. LAYOUT BİREBİR AYNI:
+       - Her katmanın konumu, boyutu ve hizalaması blueprint'teki gibi
+       - Metin sol'da ise sol'da kalsın, merkez ise merkez
+       - Padding, margin ve boşluklar aynı oranda
 
-    4. TİPOGRAFİ: Blueprint'teki font stillerini koru (bold kalırsa bold, light kalırsa light).
+    2. METİN İÇERİĞİ:
+       - Yukarıdaki "METİN İÇERİKLERİ" bölümündeki metinleri KELİMESİ KELİMESİNE yaz
+       - Font boyutu, ağırlığı ve stili blueprint'teki gibi
+       - Metinler OKUNAKLI ve NET olmalı — bulanık veya bozuk metin YASAK
 
-    5. SEKTÖR UYARLAMASI: Görseldeki nesneleri ${brand.industry} sektörüne uygun hale getir.
+    3. RENKLER:
+       - Referans görselin orijinal renklerini KULLANMA
+       - Sadece yukarıdaki marka paletini kullan
+       - Arka plan, metin, buton, dekorasyon — HEPSİ marka renginde
 
-    ${formatNote ? `6. FORMAT AYARI (${aspectRatio}): ${formatNote}` : ''}
+    4. SEKTÖR UYARLAMASI:
+       - Görseldeki nesneleri ${brand.industry} sektörüne uygun hale getir
+       - Karakterler, nesneler, ikonlar sektöre uygun olmalı
 
-    ${brand.logo ? '7. LOGO: Verilen marka logosunu blueprint\'teki logo konumuna yerleştir.' : `7. Marka ismi "${brand.name}" blueprint'teki logo konumuna yazılsın.`}
+    5. ${brand.logo ? 'LOGO: Verilen marka logosunu blueprint\'teki logo konumuna net ve okunabilir yerleştir.' : `MARKA ADI: "${brand.name}" yazısını logo konumuna estetik bir şekilde yerleştir.`}
 
-    ${designDirective ? `
-    *** EK TASARIM DİREKTİFLERİ ***
-    ${designDirective}
+    ${formatNote ? `6. FORMAT (${aspectRatio}): ${formatNote}` : ''}
+
+    ${directives ? `
+    ═══════════════════════════════════════════════════════════
+    KREATİF DİREKTÖR TALİMATLARI (MUTLAKA UYGULA)
+    ═══════════════════════════════════════════════════════════
+    TİPOGRAFİ:
+    ${directives.typographyRules}
+
+    KOMPOZİSYON:
+    ${directives.compositionGuide}
+
+    HİYERARŞİ:
+    ${directives.hierarchyPlan}
+
+    GENEL DİREKTİF:
+    ${directives.fullDirective}
     ` : ''}
 
     KALİTE: 4K, profesyonel reklam ajansı kalitesinde.
@@ -418,17 +486,17 @@ export const reconstructFromBlueprint = async (
   const parts: any[] = [];
 
   if (referenceImageBase64) {
-    parts.push({ text: "ORIJINAL REFERANS GÖRSEL (yapıyı buradan kopyala):" });
+    parts.push({ text: "REFERANS GÖRSEL (yapı ve layout kaynağı — renkleri DEĞİL, sadece yapıyı kopyala):" });
     parts.push({ inlineData: { mimeType: 'image/png', data: referenceImageBase64 } });
   }
 
   if (productImageBase64) {
-    parts.push({ text: "ÜRÜN GÖRSELİ (sahneye entegre et):" });
+    parts.push({ text: "ÜRÜN GÖRSELİ (sahneye uygun şekilde entegre et):" });
     parts.push({ inlineData: { mimeType: 'image/png', data: productImageBase64 } });
   }
 
   if (brand.logo) {
-    parts.push({ text: "MARKA LOGOSU:" });
+    parts.push({ text: "MARKA LOGOSU (net ve okunabilir yerleştir):" });
     parts.push({ inlineData: { mimeType: 'image/png', data: brand.logo } });
   }
 
@@ -456,6 +524,243 @@ export const reconstructFromBlueprint = async (
   }
 
   return imagePart.inlineData.data;
+};
+
+// ══════════════════════════════════════════════════════════════
+// 1.3 Adapt Master to Different Format — Pixel-perfect reformat
+// ══════════════════════════════════════════════════════════════
+export const adaptMasterToFormat = async (
+  masterImageBase64: string,
+  blueprint: DesignBlueprint,
+  brand: Brand,
+  topic: string,
+  targetAspectRatio: string,
+  masterAspectRatio: string,
+  productImageBase64: string | null
+): Promise<string> => {
+  if (window.aistudio && window.aistudio.hasSelectedApiKey) {
+    const hasKey = await window.aistudio.hasSelectedApiKey();
+    if (!hasKey) throw new Error("API_KEY_MISSING");
+  }
+
+  const ai = getAI();
+
+  const brandColors = brand.palette.length >= 3
+    ? { dominant: brand.palette[0].hex, secondary: brand.palette[1].hex, accent: brand.palette[2].hex }
+    : { dominant: brand.primaryColor, secondary: brand.secondaryColor, accent: brand.primaryColor };
+
+  const formatKey = targetAspectRatio === '1:1' ? 'square' : targetAspectRatio === '4:5' ? 'portrait' : targetAspectRatio === '9:16' ? 'story' : 'landscape';
+  const formatNote = blueprint.formatAdjustments?.[formatKey] || '';
+
+  // Build a concise layer inventory from the master so AI knows exactly what exists
+  const layerInventory = blueprint.layers.map(l => {
+    if (l.type === 'text') return `• [${l.type}] "${l.content}" — font: ${l.style.fontSize || 'md'} ${l.style.fontWeight || 'regular'}, color: ${l.style.color}, align: ${l.style.textAlign || 'left'}`;
+    if (l.type === 'background') return `• [${l.type}] color: ${l.style.color}${l.style.gradient ? `, gradient: ${l.style.gradient}` : ''}`;
+    return `• [${l.type}] "${l.content}" — pos: ${l.position.x},${l.position.y}, size: ${l.size.width}×${l.size.height}`;
+  }).join('\n');
+
+  const prompt = `
+    GÖREV: Verilen MASTER görseli ${masterAspectRatio} formatından ${targetAspectRatio} formatına ADAPT ET.
+
+    ██████████████████████████████████████████████████████████████
+    ██  BU BİR YENİDEN BOYUTLANDIRMA — YENİ TASARIM DEĞİL!    ██
+    ██████████████████████████████████████████████████████████████
+
+    MASTER görseli dikkatlice incele. Şimdi TAMAMEN AYNI görseli ${targetAspectRatio} formatında üret.
+
+    DEĞİŞMEYECEK ŞEYLERİN LİSTESİ (HİÇBİRİ DEĞİŞMEMELİ):
+    ┌─────────────────────────────────────────────┐
+    │ ✗ Font ailesi DEĞİŞMEZ                     │
+    │ ✗ Font boyut oranları DEĞİŞMEZ             │
+    │ ✗ Font ağırlığı (bold/regular) DEĞİŞMEZ    │
+    │ ✗ Yazı renkleri DEĞİŞMEZ                   │
+    │ ✗ Arka plan rengi/gradyanı DEĞİŞMEZ        │
+    │ ✗ Metin içeriği (kelimeler) DEĞİŞMEZ       │
+    │ ✗ Logo/ikon DEĞİŞMEZ                       │
+    │ ✗ Görsel elementler DEĞİŞMEZ               │
+    │ ✗ Dekoratif öğeler DEĞİŞMEZ                │
+    │ ✗ Renk paleti DEĞİŞMEZ                     │
+    │ ✗ Genel stil/mood DEĞİŞMEZ                 │
+    └─────────────────────────────────────────────┘
+
+    SADECE DEĞİŞECEK ŞEYLER:
+    ┌─────────────────────────────────────────────┐
+    │ ✓ Kanvas boyut oranı: ${masterAspectRatio} → ${targetAspectRatio}     │
+    │ ✓ Elementlerin konumu (yeni boyuta sığması) │
+    │ ✓ Boşluk/padding oranları (boyuta uyum)     │
+    └─────────────────────────────────────────────┘
+
+    MASTER GÖRSELDEKİ KATMANLAR:
+    ${layerInventory}
+
+    MARKA RENKLERİ (bunları koru):
+    Dominant: ${brandColors.dominant}
+    İkincil: ${brandColors.secondary}
+    Vurgu: ${brandColors.accent}
+
+    ${formatNote ? `FORMAT NOTU: ${formatNote}` : ''}
+
+    HİZALAMA KURALLARI (${targetAspectRatio}):
+    ${targetAspectRatio === '9:16' ? `
+    - Dikey format — daha fazla dikey alan var
+    - Elementleri dikey olarak dağıt, yatay sıkıştırma
+    - Metin blokları arasında daha fazla dikey boşluk bırak
+    - Ana görseli merkeze veya üst yarıya al` : ''}
+    ${targetAspectRatio === '1:1' ? `
+    - Kare format — dengeli dağılım
+    - Merkez ağırlıklı yerleşim
+    - Tüm elementler simetrik olmalı` : ''}
+    ${targetAspectRatio === '4:5' ? `
+    - Hafif dikey — Instagram post boyutu
+    - Elementleri hafifçe dikey olarak yeniden düzenle
+    - 1:1'e çok yakın, minimal değişiklik gerekli` : ''}
+    ${targetAspectRatio === '16:9' ? `
+    - Yatay format — daha fazla yatay alan
+    - Elementleri yatay olarak dağıt
+    - Metin ve görsel yan yana gelebilir` : ''}
+
+    KONU: ${topic}
+
+    KALİTE: 4K, profesyonel.
+    TEKRAR: BU YENİ BİR TASARIM DEĞİL. MASTER İLE BİREBİR AYNI, SADECE BOYUT DEĞİŞİYOR.
+  `;
+
+  const parts: any[] = [];
+
+  parts.push({ text: "MASTER GÖRSEL — bunu bire bir kopyala, sadece boyutu değiştir:" });
+  parts.push({ inlineData: { mimeType: 'image/png', data: masterImageBase64 } });
+
+  if (productImageBase64) {
+    parts.push({ text: "ÜRÜN GÖRSELİ (master'daki ile aynı şekilde yerleştir):" });
+    parts.push({ inlineData: { mimeType: 'image/png', data: productImageBase64 } });
+  }
+
+  if (brand.logo) {
+    parts.push({ text: "MARKA LOGOSU (master'daki ile aynı):" });
+    parts.push({ inlineData: { mimeType: 'image/png', data: brand.logo } });
+  }
+
+  parts.push({ text: prompt });
+
+  const response = await ai.models.generateContent({
+    model: 'gemini-3-pro-image-preview',
+    contents: { parts },
+    config: {
+      imageConfig: {
+        aspectRatio: targetAspectRatio,
+        imageSize: "2K"
+      }
+    }
+  });
+
+  const candidates = response.candidates;
+  if (!candidates || candidates.length === 0) throw new Error("Format adaptasyonu başarısız.");
+
+  const contentParts = candidates[0].content.parts;
+  const imagePart = contentParts.find((p: any) => p.inlineData);
+
+  if (!imagePart || !imagePart.inlineData) {
+    throw new Error("Yanıtta görsel verisi bulunamadı.");
+  }
+
+  return imagePart.inlineData.data;
+};
+
+// ══════════════════════════════════════════════════════════════
+// 1.4 Content Brain — Generate smart text for every blueprint layer
+// ══════════════════════════════════════════════════════════════
+export const generateContentPlan = async (
+  blueprint: DesignBlueprint,
+  brand: Brand,
+  topic: string,
+  directives: DesignDirectives
+): Promise<ContentPlan> => {
+  const ai = getAI();
+
+  const textLayers = blueprint.layers.filter(l => l.type === 'text' || l.type === 'logo');
+  const layerDescriptions = textLayers.map((l, i) => {
+    return `Katman ${i + 1} (ID: ${l.id}, Tip: ${l.type}):
+    - Orijinal İçerik: "${l.content}"
+    - Font: ${l.style.fontSize || 'md'} ${l.style.fontWeight || 'regular'}
+    - Konum: ${l.position.x}, ${l.position.y}
+    - Hizalama: ${l.style.textAlign || 'left'}
+    - Maksimum karakter tahmini: ${l.style.fontSize === 'xl' ? '25 karakter' : l.style.fontSize === 'lg' ? '40 karakter' : l.style.fontSize === 'md' ? '60 karakter' : '80 karakter'}`;
+  }).join('\n\n');
+
+  const prompt = `
+    Sen ${brand.industry} sektöründe uzmanlaşmış, ödüllü bir reklam metin yazarısın (copywriter).
+    Aşağıdaki tasarım şablonundaki metin katmanları için YENİ İÇERİK yazman gerekiyor.
+
+    MARKA:
+    - İsim: ${brand.name}
+    - Sektör: ${brand.industry}
+    ${brand.description ? `- Açıklama: ${brand.description}` : ''}
+    - Ton: ${brand.tone}
+    ${brand.instagram ? `- Instagram: ${brand.instagram}` : ''}
+    ${brand.phone ? `- Telefon: ${brand.phone}` : ''}
+
+    KONU: "${topic}"
+
+    TASARIM DİREKTİFLERİ:
+    - Tipografi: ${directives.typographyRules}
+    - Hiyerarşi: ${directives.hierarchyPlan}
+
+    MEVCUTMETİN KATMANLARI:
+    ${layerDescriptions}
+
+    KURALLAR:
+    1. Her metin katmanı için MARKA TONUNA uygun, KONUYLA İLGİLİ yeni içerik yaz
+    2. Orijinal metnin ROLÜNÜ koru:
+       - Eğer orijinal bir BAŞLIK ise, yeni de BAŞLIK olsun (kısa, güçlü, dikkat çekici)
+       - Eğer orijinal bir ALT BAŞLIK ise, yeni de ALT BAŞLIK olsun (açıklayıcı)
+       - Eğer orijinal bir CTA ise, yeni de CTA olsun (aksiyon çağrısı)
+       - Eğer bir tarih/saat ise, güncel bir bilgi yaz
+       - Eğer bir iletişim bilgisi ise, markanın gerçek bilgilerini kullan
+    3. KARAKTER SINIRI: Her katmanın tahmini maksimum karakter sayısını aşma
+       - Çok uzun metinler tasarımı bozar
+       - Başlıklar kısa ve vurucu olsun
+    4. DİL: Markanın tonuna uygun Türkçe veya İngilizce (orijinal diline göre)
+    5. LOGO katmanı varsa: Marka adını "${brand.name}" olarak yaz
+    6. Klişe ifadelerden kaçın — özgün, akılda kalıcı olsun
+    7. Sektöre özgü terminoloji kullan (${brand.industry})
+
+    Ayrıca genel bir headline, subheadline, ctaText ve brandMessage üret.
+  `;
+
+  const response = await ai.models.generateContent({
+    model: 'gemini-3-flash-preview',
+    contents: prompt,
+    config: {
+      responseMimeType: 'application/json',
+      responseSchema: {
+        type: Type.OBJECT,
+        properties: {
+          layerContents: {
+            type: Type.ARRAY,
+            items: {
+              type: Type.OBJECT,
+              properties: {
+                layerId: { type: Type.STRING },
+                originalContent: { type: Type.STRING },
+                newContent: { type: Type.STRING },
+                reasoning: { type: Type.STRING },
+              },
+              required: ['layerId', 'originalContent', 'newContent', 'reasoning'],
+            },
+          },
+          headline: { type: Type.STRING },
+          subheadline: { type: Type.STRING },
+          ctaText: { type: Type.STRING },
+          brandMessage: { type: Type.STRING },
+        },
+        required: ['layerContents', 'headline', 'subheadline', 'ctaText', 'brandMessage'],
+      },
+    },
+  });
+
+  const text = response.text;
+  if (!text) throw new Error("İçerik planı oluşturulamadı.");
+  return JSON.parse(text) as ContentPlan;
 };
 
 // 1.5 Smart Matching Logic

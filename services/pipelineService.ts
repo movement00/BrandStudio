@@ -5,8 +5,9 @@ import {
 } from '../types';
 import {
   analyzeImageStyle, decomposeToBlueprint, matchTopicsToStyles,
-  generateBrandedImage, reconstructFromBlueprint,
-  generateDesignDirectives, DesignDirectives
+  generateBrandedImage, reconstructFromBlueprint, adaptMasterToFormat,
+  generateDesignDirectives, generateContentPlan,
+  DesignDirectives, ContentPlan
 } from './geminiService';
 
 type PipelineEventType = 'step-update' | 'result-update' | 'run-update' | 'log';
@@ -89,14 +90,12 @@ export class PipelineService {
     const steps: PipelineStep[] = [
       { id: 'blueprint', name: 'Blueprint Ayrıştırma', description: 'Referans görseller JSON katmanlarına ayrıştırılıyor', status: 'idle', progress: 0 },
       { id: 'match', name: 'Akıllı Eşleştirme', description: 'Konular en uygun stillerle eşleştiriliyor', status: 'idle', progress: 0 },
-      { id: 'directives', name: 'Tasarım Direktifleri', description: 'AI Kreatif Direktör tasarım kurallarını belirliyor', status: 'idle', progress: 0 },
+      { id: 'brain', name: 'Kreatif Beyin', description: 'Direktifler + içerik planı + metin yazarlığı', status: 'idle', progress: 0 },
       { id: 'generate', name: 'Görsel Üretimi', description: `${totalItems} görsel üretiliyor (${formats.length} format)`, status: 'idle', progress: 0 },
       { id: 'save', name: 'Kayıt & Arşiv', description: 'Sonuçlar kaydediliyor', status: 'idle', progress: 0 },
     ];
 
-    if (!config.autoRevise) {
-      steps[2].status = 'skipped'; // Skip directives step
-    }
+    // Kreatif Beyin always runs — it's the intelligence layer
     if (!config.saveAsTemplate) {
       steps[4].status = 'skipped';
     }
@@ -136,14 +135,11 @@ export class PipelineService {
       // ===== STEP 2: MATCH =====
       const matches = await this.stepMatch(config.topics, analyses, signal);
 
-      // ===== STEP 3: DESIGN DIRECTIVES (optional, before generation) =====
-      let directives: Map<number, string> | null = null;
-      if (config.autoRevise) {
-        directives = await this.stepDirectives(config, brand, analyses, matches, signal);
-      }
+      // ===== STEP 3: CREATIVE BRAIN (always runs) =====
+      const brainResults = await this.stepCreativeBrain(config, brand, analyses, blueprints, matches, signal);
 
       // ===== STEP 4: GENERATE (multi-format) =====
-      await this.stepGenerate(config, brand, analyses, blueprints, matches, formats, signal, directives);
+      await this.stepGenerate(config, brand, analyses, blueprints, matches, formats, signal, brainResults);
 
       // ===== STEP 5: SAVE (optional) =====
       if (config.saveAsTemplate) {
@@ -254,7 +250,7 @@ export class PipelineService {
     return matches;
   }
 
-  // ===== STEP 4: Generate branded images (multi-format) =====
+  // ===== STEP 4: Generate branded images (Master → Adapt flow) =====
   private async stepGenerate(
     config: PipelineConfig,
     brand: Brand,
@@ -263,11 +259,18 @@ export class PipelineService {
     matches: { topicIndex: number; styleId: string }[],
     formats: string[],
     signal: AbortSignal,
-    directives?: Map<number, string> | null
+    brainResults?: Map<number, { directives: DesignDirectives; contentPlan: ContentPlan }> | null
   ): Promise<void> {
     this.updateStep('generate', { status: 'running', startedAt: Date.now() });
     const totalGenerations = matches.length * formats.length;
+    // First format is the "master", rest are adaptations
+    const masterFormat = formats[0];
+    const adaptFormats = formats.slice(1);
+
     this.log(`Görsel üretimi başlıyor — ${matches.length} konu × ${formats.length} format = ${totalGenerations} görsel`);
+    if (adaptFormats.length > 0) {
+      this.log(`  → Master format: ${masterFormat}, Adaptasyon: ${adaptFormats.join(', ')}`);
+    }
 
     let completed = 0;
 
@@ -290,52 +293,103 @@ export class PipelineService {
         continue;
       }
 
-      const directive = directives?.get(match.topicIndex);
+      const brain = brainResults?.get(match.topicIndex);
+      const productImg = config.productImages.length > 0
+        ? config.productImages[i % config.productImages.length]
+        : null;
 
-      for (let fi = 0; fi < formats.length; fi++) {
+      // ─── STEP A: Generate MASTER image (first format) ───
+      const masterResultId = `result-${match.topicIndex}-0`;
+      this.updateResult(masterResultId, { status: 'generating' });
+      this.log(`🎨 MASTER üretiliyor (${completed + 1}/${totalGenerations}): "${topic}" [${masterFormat}]`);
+      if (brain) {
+        this.log(`  → Direktif + İçerik planı enjekte ediliyor...`);
+      }
+
+      let masterImageBase64: string | null = null;
+
+      try {
+        if (blueprint) {
+          masterImageBase64 = await reconstructFromBlueprint(
+            blueprint,
+            brand,
+            topic,
+            masterFormat,
+            refImage.base64,
+            productImg?.base64 || null,
+            brain?.contentPlan || null,
+            brain?.directives || null,
+          );
+        } else {
+          masterImageBase64 = await generateBrandedImage(
+            brand,
+            analysis,
+            refImage.base64,
+            productImg?.base64 || null,
+            topic,
+            masterFormat,
+            brain?.directives?.fullDirective
+          );
+        }
+
+        this.updateResult(masterResultId, {
+          status: 'completed',
+          generatedImageBase64: masterImageBase64,
+        });
+
+        completed++;
+        this.currentRun!.completedItems = completed;
+        this.updateStep('generate', {
+          progress: Math.round((completed / totalGenerations) * 100),
+        });
+        this.updateRun({ completedItems: completed });
+        this.log(`  ✓ Master tamamlandı.`);
+
+      } catch (err: any) {
+        this.updateResult(masterResultId, {
+          status: 'failed',
+          error: err.message,
+        });
+        this.log(`  ✗ Master hatası ("${topic}"): ${err.message}`);
+        completed++;
+
+        // If master failed, skip adaptations for this topic
+        adaptFormats.forEach((_, afi) => {
+          this.updateResult(`result-${match.topicIndex}-${afi + 1}`, {
+            status: 'failed',
+            error: 'Master görsel üretilemediği için adaptasyon atlandı'
+          });
+          completed++;
+        });
+        this.currentRun!.completedItems = completed;
+        this.updateRun({ completedItems: completed });
+        continue;
+      }
+
+      // ─── STEP B: Adapt master to each additional format ───
+      for (let afi = 0; afi < adaptFormats.length; afi++) {
         if (signal.aborted) throw new DOMException('Aborted', 'AbortError');
 
-        const fmt = formats[fi];
-        const resultId = `result-${match.topicIndex}-${fi}`;
+        const targetFmt = adaptFormats[afi];
+        const adaptResultId = `result-${match.topicIndex}-${afi + 1}`;
 
-        this.updateResult(resultId, { status: 'generating' });
-        this.log(`Üretiliyor (${completed + 1}/${totalGenerations}): "${topic}" [${fmt}]`);
+        this.updateResult(adaptResultId, { status: 'generating' });
+        this.log(`  📐 Adapt ediliyor (${completed + 1}/${totalGenerations}): "${topic}" [${masterFormat} → ${targetFmt}]`);
 
         try {
-          const productImg = config.productImages.length > 0
-            ? config.productImages[i % config.productImages.length]
-            : null;
+          const adaptedBase64 = await adaptMasterToFormat(
+            masterImageBase64!,
+            blueprint || { canvas: { aspectRatio: masterFormat, backgroundColor: brand.primaryColor, mood: analysis.mood, style: analysis.artisticStyle }, layout: { type: 'single-column', alignment: 'center', padding: '5%', gutterSize: '2%', visualFlow: '' }, layers: [], typography: { headingStyle: '', bodyStyle: '', accentStyle: '', hierarchy: '' }, colorSystem: { dominant: brand.primaryColor, secondary: brand.secondaryColor, accent: brand.primaryColor, textPrimary: '#FFFFFF', textSecondary: '#CCCCCC', distribution: '' }, compositionNotes: analysis.composition, formatAdjustments: {} },
+            brand,
+            topic,
+            targetFmt,
+            masterFormat,
+            productImg?.base64 || null
+          );
 
-          let imageBase64: string;
-
-          if (blueprint) {
-            // Use blueprint-based reconstruction (higher fidelity)
-            if (directive) this.log(`  → Blueprint + Direktif uygulanıyor...`);
-            imageBase64 = await reconstructFromBlueprint(
-              blueprint,
-              brand,
-              topic,
-              fmt,
-              refImage.base64,
-              productImg?.base64 || null,
-              directive
-            );
-          } else {
-            // Fallback to standard generation
-            imageBase64 = await generateBrandedImage(
-              brand,
-              analysis,
-              refImage.base64,
-              productImg?.base64 || null,
-              topic,
-              fmt,
-              directive
-            );
-          }
-
-          this.updateResult(resultId, {
+          this.updateResult(adaptResultId, {
             status: 'completed',
-            generatedImageBase64: imageBase64,
+            generatedImageBase64: adaptedBase64,
           });
 
           completed++;
@@ -344,13 +398,14 @@ export class PipelineService {
             progress: Math.round((completed / totalGenerations) * 100),
           });
           this.updateRun({ completedItems: completed });
+          this.log(`  ✓ Adaptasyon tamamlandı [${targetFmt}] — master ile birebir aynı tasarım.`);
 
         } catch (err: any) {
-          this.updateResult(resultId, {
+          this.updateResult(adaptResultId, {
             status: 'failed',
             error: err.message,
           });
-          this.log(`Üretim hatası ("${topic}" [${fmt}]): ${err.message}`);
+          this.log(`  ✗ Adaptasyon hatası ("${topic}" [${targetFmt}]): ${err.message}`);
           completed++;
         }
       }
@@ -360,18 +415,19 @@ export class PipelineService {
     this.log('Görsel üretimi tamamlandı.');
   }
 
-  // ===== STEP 3: Generate design directives before image generation =====
-  private async stepDirectives(
+  // ===== STEP 3: Creative Brain — Directives + Content Plan (always runs) =====
+  private async stepCreativeBrain(
     config: PipelineConfig,
     brand: Brand,
     analyses: Map<string, StyleAnalysis>,
+    blueprints: Map<string, DesignBlueprint>,
     matches: { topicIndex: number; styleId: string }[],
     signal: AbortSignal
-  ): Promise<Map<number, string>> {
-    this.updateStep('directives', { status: 'running', startedAt: Date.now() });
-    this.log('AI Kreatif Direktör tasarım kurallarını belirliyor...');
+  ): Promise<Map<number, { directives: DesignDirectives; contentPlan: ContentPlan }>> {
+    this.updateStep('brain', { status: 'running', startedAt: Date.now() });
+    this.log('🧠 Kreatif Beyin çalışıyor — her konu için direktif + içerik planı üretiliyor...');
 
-    const directivesMap = new Map<number, string>();
+    const brainMap = new Map<number, { directives: DesignDirectives; contentPlan: ContentPlan }>();
 
     for (let i = 0; i < matches.length; i++) {
       if (signal.aborted) throw new DOMException('Aborted', 'AbortError');
@@ -379,36 +435,62 @@ export class PipelineService {
       const match = matches[i];
       const topic = config.topics[match.topicIndex];
       const analysis = analyses.get(match.styleId);
+      const blueprint = blueprints.get(match.styleId);
 
       if (!analysis) continue;
 
-      this.log(`Direktif oluşturuluyor (${i + 1}/${matches.length}): "${topic}"`);
+      this.log(`Beyin çalışıyor (${i + 1}/${matches.length}): "${topic}"`);
 
       try {
-        const directives = await generateDesignDirectives(
-          brand,
-          topic,
-          analysis,
-          config.aspectRatio
-        );
+        // Run directives and content plan in parallel
+        const [directives, contentPlan] = await Promise.all([
+          generateDesignDirectives(brand, topic, analysis, config.aspectRatio),
+          blueprint
+            ? generateContentPlan(blueprint, brand, topic, { typographyRules: '', colorStrategy: '', compositionGuide: '', hierarchyPlan: '', fullDirective: '' })
+            : Promise.resolve(null),
+        ]);
 
-        directivesMap.set(match.topicIndex, directives.fullDirective);
+        // If we got a content plan, regenerate it with actual directives for better quality
+        let finalContentPlan = contentPlan;
+        if (blueprint && directives) {
+          try {
+            finalContentPlan = await generateContentPlan(blueprint, brand, topic, directives);
+          } catch {
+            // Use the first pass if second fails
+          }
+        }
 
-        this.log(`  → Tipografi: ${directives.typographyRules.slice(0, 60)}...`);
-        this.log(`  → Renk: ${directives.colorStrategy.slice(0, 60)}...`);
+        brainMap.set(match.topicIndex, {
+          directives,
+          contentPlan: finalContentPlan || {
+            layerContents: [],
+            headline: topic,
+            subheadline: `${brand.name} — ${brand.industry}`,
+            ctaText: 'Keşfet',
+            brandMessage: brand.description || brand.name,
+          },
+        });
 
-        this.updateStep('directives', {
+        const textLayerCount = finalContentPlan?.layerContents.length || 0;
+        this.log(`  → Direktif: ✓ (tipografi + renk + kompozisyon + hiyerarşi)`);
+        this.log(`  → İçerik: ✓ (${textLayerCount} metin katmanı için akıllı içerik)`);
+        if (finalContentPlan) {
+          this.log(`  → Başlık: "${finalContentPlan.headline}"`);
+          this.log(`  → CTA: "${finalContentPlan.ctaText}"`);
+        }
+
+        this.updateStep('brain', {
           progress: Math.round(((i + 1) / matches.length) * 100),
         });
       } catch (err: any) {
-        this.log(`Direktif hatası ("${topic}"): ${err.message}`);
-        // Continue without directive — image will still generate with base prompt
+        this.log(`Beyin hatası ("${topic}"): ${err.message}`);
+        // Even on error, continue — generation can still work with basic prompt
       }
     }
 
-    this.updateStep('directives', { status: 'completed', completedAt: Date.now(), progress: 100 });
-    this.log(`${directivesMap.size} konu için tasarım direktifi oluşturuldu.`);
-    return directivesMap;
+    this.updateStep('brain', { status: 'completed', completedAt: Date.now(), progress: 100 });
+    this.log(`🧠 ${brainMap.size} konu için kreatif beyin tamamlandı.`);
+    return brainMap;
   }
 
   // ===== STEP 5: Save results as templates =====
