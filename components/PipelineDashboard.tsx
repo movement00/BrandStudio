@@ -59,7 +59,7 @@ const PipelineDashboard: React.FC<PipelineDashboardProps> = ({
   const [revisionPrompt, setRevisionPrompt] = useState('');
   const [saveAsTemplate, setSaveAsTemplate] = useState(true);
   const [pipelineName, setPipelineName] = useState('');
-  const [creativeTone, setCreativeTone] = useState('kurumsal');
+  const [creativeTone, setCreativeTone] = useState('');
 
   // Revision state
   const [bulkRevisionPrompt, setBulkRevisionPrompt] = useState('');
@@ -195,7 +195,7 @@ const PipelineDashboard: React.FC<PipelineDashboardProps> = ({
       const refs = referenceImages.length > 0
         ? referenceImages.map(img => ({ base64: img.base64, name: img.name }))
         : undefined;
-      const generated = await generatePipelineTopics(brand, topicCount, aspectRatio, refs, creativeTone);
+      const generated = await generatePipelineTopics(brand, topicCount, aspectRatio, refs, creativeTone || undefined);
       if (generated.length > 0) {
         setTopicsText(generated.join('\n'));
       } else {
@@ -346,7 +346,7 @@ const PipelineDashboard: React.FC<PipelineDashboardProps> = ({
       autoRevise: true, // Kreatif Beyin always active
       revisionPrompt: undefined,
       saveAsTemplate,
-      creativeTone,
+      creativeTone: creativeTone || undefined,
       createdAt: Date.now(),
     };
 
@@ -784,6 +784,7 @@ const PipelineDashboard: React.FC<PipelineDashboardProps> = ({
               </div>
               <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5 mb-2">
                 {[
+                  { id: '', label: 'Otomatik', desc: 'AI konuya göre belirler' },
                   { id: 'kurumsal', label: 'Kurumsal', desc: 'Profesyonel, güven veren' },
                   { id: 'esprili', label: 'Esprili', desc: 'Şakacı, zekice, mizahi' },
                   { id: 'eglenceli', label: 'Eğlenceli', desc: 'Enerjik, canlı, neşeli' },
@@ -807,7 +808,7 @@ const PipelineDashboard: React.FC<PipelineDashboardProps> = ({
                 ))}
               </div>
               <p className="text-[10px] text-indigo-300/50 leading-relaxed">
-                Seçilen yaklaşım; metin içerikleri, direktifler ve tüm kreatif çıktıları etkiler.
+                {creativeTone ? 'Seçilen yaklaşım tüm kreatif çıktıları etkiler.' : 'AI, her konu için en uygun yaklaşımı otomatik belirler.'}
               </p>
             </div>
 
