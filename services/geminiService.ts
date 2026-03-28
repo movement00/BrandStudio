@@ -1732,3 +1732,351 @@ export const generateDesignDirectives = async (
 
   return JSON.parse(text);
 };
+
+// ══════════════════════════════════════════════════════════════
+// 9. CAROUSEL — AI-powered carousel planning & consistent generation
+// ══════════════════════════════════════════════════════════════
+
+import { CarouselContentPlan } from '../types';
+
+/**
+ * Plans the full carousel: narrative arc, slide contents, visual consistency rules.
+ */
+export const planCarouselContent = async (
+  brand: Brand,
+  topic: string,
+  slideCount: number,
+  styleAnalysis: StyleAnalysis,
+  blueprint: DesignBlueprint,
+  creativeTone?: string,
+  pastCarouselThemes?: string[]
+): Promise<CarouselContentPlan> => {
+  const ai = getAI();
+  const isEnglish = brand.outputLanguage === 'en';
+
+  const prompt = `
+    Sen dünyanın en iyi sosyal medya kreatif direktörüsün. Instagram carousel tasarımlarında uzmanlaşmışsın.
+    GÖREV: Verilen marka ve konu için ${slideCount} slide'lık bir CAROUSEL İÇERİK PLANI oluştur.
+
+    ═══════════════════════════════════════════════════════════
+    MARKA
+    ═══════════════════════════════════════════════════════════
+    İsim: ${brand.name}
+    Sektör: ${brand.industry}
+    ${brand.description ? `Açıklama: ${brand.description}` : ''}
+    Ton: ${brand.tone}
+    Renk Paleti: ${brand.palette.map(c => `${c.name}: ${c.hex}`).join(', ')}
+    ${brand.slogans?.length ? `Sloganlar: ${brand.slogans.join(' | ')}` : ''}
+
+    ═══════════════════════════════════════════════════════════
+    KONU
+    ═══════════════════════════════════════════════════════════
+    ${topic}
+
+    ═══════════════════════════════════════════════════════════
+    REFERANS STİL
+    ═══════════════════════════════════════════════════════════
+    Kompozisyon: ${styleAnalysis.composition}
+    Mood: ${styleAnalysis.mood}
+    Artistik Stil: ${styleAnalysis.artisticStyle}
+    Arka Plan: ${styleAnalysis.backgroundDetails}
+
+    BLUEPRINT STİLİ:
+    Canvas: ${blueprint.canvas.style}, Mood: ${blueprint.canvas.mood}
+    Layout: ${blueprint.layout.type}, Alignment: ${blueprint.layout.alignment}
+    Tipografi: Heading → ${blueprint.typography.headingStyle}, Body → ${blueprint.typography.bodyStyle}
+    Renkler: Dominant ${blueprint.colorSystem.dominant}, Secondary ${blueprint.colorSystem.secondary}, Accent ${blueprint.colorSystem.accent}
+
+    ${creativeTone ? `KREATİF YAKLAŞIM: ${creativeTone}` : ''}
+    ${pastCarouselThemes?.length ? `GEÇMİŞ CAROUSEL TEMALARI (bunlardan farklı ol): ${pastCarouselThemes.join(', ')}` : ''}
+
+    ═══════════════════════════════════════════════════════════
+    CAROUSEL PLANI KURALLARI
+    ═══════════════════════════════════════════════════════════
+    1. ANLATIM AKİŞİ (Narrative Arc):
+       - Slide 1: HOOK — dikkat çekici, kaydırmaya ikna eden açılış
+       - Slide 2-${slideCount - 2}: İÇERİK — problem, çözüm, özellikler, fayda, sosyal kanıt
+       - Slide ${slideCount - 1}: SON — CTA (call to action) veya kapanış
+       - Her slide bir öncekiyle mantıksal bağlantılı olmalı
+
+    2. GÖRSEL TUTARLILIK:
+       - Tüm slide'lar AYNI arka plan stili, AYNI renk dağılımı, AYNI tipografi kuralları
+       - "colorFlow": Renklerin slide'lar arasında nasıl akacağını belirt
+       - "typographyConsistency": Font kurallarını tüm slide'lar için sabit tut
+       - "visualThread": Tüm slide'ları birbirine bağlayan görsel ipucu (tekrarlayan element, ikon, border, gradient vb.)
+
+    3. HER SLIDE İÇİN:
+       - headline: Kısa, vurucu (maks 6 kelime)
+       - bodyText: Açıklayıcı (maks 15 kelime)
+       - ctaText: Varsa CTA metni
+       - visualDirection: Bu slide'da ne olmalı (ikon, ürün fotoğrafı, grafik vb.)
+       - narrativeRole: 'hook' | 'problem' | 'solution' | 'feature' | 'social-proof' | 'cta'
+
+    DİL: ${isEnglish ? 'İNGİLİZCE' : 'TÜRKÇE'}
+
+    Çıktı JSON formatında olmalı.
+  `;
+
+  const response = await ai.models.generateContent({
+    model: 'gemini-3-flash-preview',
+    contents: prompt,
+    config: {
+      responseMimeType: 'application/json',
+      responseSchema: {
+        type: Type.OBJECT,
+        properties: {
+          theme: { type: Type.STRING },
+          slideContents: {
+            type: Type.ARRAY,
+            items: {
+              type: Type.OBJECT,
+              properties: {
+                slideOrder: { type: Type.INTEGER },
+                headline: { type: Type.STRING },
+                bodyText: { type: Type.STRING },
+                ctaText: { type: Type.STRING },
+                visualDirection: { type: Type.STRING },
+                narrativeRole: { type: Type.STRING },
+              },
+              required: ['slideOrder', 'headline', 'bodyText', 'visualDirection', 'narrativeRole'],
+            },
+          },
+          colorFlow: { type: Type.STRING },
+          typographyConsistency: { type: Type.STRING },
+          visualThread: { type: Type.STRING },
+        },
+        required: ['theme', 'slideContents', 'colorFlow', 'typographyConsistency', 'visualThread'],
+      },
+    },
+  });
+
+  const text = response.text;
+  if (!text) throw new Error('Carousel planı oluşturulamadı.');
+  return JSON.parse(text) as CarouselContentPlan;
+};
+
+/**
+ * Generates a single carousel slide image with full consistency context.
+ */
+export const generateCarouselSlide = async (
+  brand: Brand,
+  slideContent: CarouselContentPlan['slideContents'][0],
+  carouselPlan: CarouselContentPlan,
+  styleAnalysis: StyleAnalysis,
+  blueprint: DesignBlueprint,
+  referenceImageBase64: string | null,
+  productImageBase64: string | null,
+  aspectRatio: string,
+  slideIndex: number,
+  totalSlides: number,
+  previousSlideBase64?: string | null
+): Promise<string> => {
+  const ai = getAI();
+
+  const brandColors = brand.palette.length >= 3
+    ? { dominant: brand.palette[0].hex, secondary: brand.palette[1].hex, accent: brand.palette[2].hex }
+    : { dominant: brand.primaryColor, secondary: brand.secondaryColor, accent: brand.primaryColor };
+
+  const prompt = `
+    GÖREV: Bir carousel serisinin ${slideIndex + 1}/${totalSlides} numaralı slide'ını üret.
+    Bu slide BAĞIMSIZ değil — bir serinin PARÇASI. Tüm slide'lar aynı görsel DNA'yı paylaşmalı.
+
+    ═══════════════════════════════════════════════════════════
+    MARKA KİMLİĞİ
+    ═══════════════════════════════════════════════════════════
+    İsim: ${brand.name}
+    Sektör: ${brand.industry}
+    ${brand.description ? `Açıklama: ${brand.description}` : ''}
+    Ton: ${brand.tone}
+    ${brand.instagram ? `Instagram: @${brand.instagram}` : ''}
+    ${brand.phone ? `Telefon: ${brand.phone}` : ''}
+    ${brand.website ? `Website: ${brand.website}` : ''}
+
+    ═══════════════════════════════════════════════════════════
+    CAROUSEL SERİSİ BİLGİSİ
+    ═══════════════════════════════════════════════════════════
+    Tema: ${carouselPlan.theme}
+    Toplam Slide: ${totalSlides}
+    Bu Slide: ${slideIndex + 1}/${totalSlides}
+    Narrative Rolü: ${slideContent.narrativeRole}
+
+    ═══════════════════════════════════════════════════════════
+    TUTARLILIK KURALLARI (TÜM SLIDE'LAR İÇİN AYNI)
+    ═══════════════════════════════════════════════════════════
+    RENK AKIŞI: ${carouselPlan.colorFlow}
+    TİPOGRAFİ: ${carouselPlan.typographyConsistency}
+    GÖRSEL İPUCU: ${carouselPlan.visualThread}
+
+    BU DEĞİŞMEZ:
+    - Arka plan stili/rengi DEĞİŞMEZ
+    - Font ailesi DEĞİŞMEZ
+    - Font boyut hiyerarşisi DEĞİŞMEZ
+    - Renk paleti DEĞİŞMEZ
+    - Dekoratif elementler TÜM slide'larda TEKRARLANMALI
+    - Logo konumu DEĞİŞMEZ
+    - Padding/margin oranları DEĞİŞMEZ
+
+    ═══════════════════════════════════════════════════════════
+    BU SLIDE'IN İÇERİĞİ
+    ═══════════════════════════════════════════════════════════
+    Başlık: "${slideContent.headline}"
+    Açıklama: "${slideContent.bodyText}"
+    ${slideContent.ctaText ? `CTA: "${slideContent.ctaText}"` : ''}
+    Görsel Yön: ${slideContent.visualDirection}
+
+    ═══════════════════════════════════════════════════════════
+    STİL DNA (referans görselden çıkarılmıştır)
+    ═══════════════════════════════════════════════════════════
+    Kompozisyon: ${styleAnalysis.composition}
+    Işık: ${styleAnalysis.lighting}
+    Renk Atmosferi: ${styleAnalysis.colorPaletteDescription}
+    Mood: ${styleAnalysis.mood}
+    Doku: ${styleAnalysis.textureDetails}
+    Artistik Stil: ${styleAnalysis.artisticStyle}
+    Arka Plan: ${styleAnalysis.backgroundDetails}
+
+    BLUEPRINT LAYOUT:
+    - Canvas: ${blueprint.canvas.style}, Mood: ${blueprint.canvas.mood}
+    - Layout: ${blueprint.layout.type}, Alignment: ${blueprint.layout.alignment}
+    - Renk Dağılımı: Dominant ${brandColors.dominant} (%60), İkincil ${brandColors.secondary} (%30), Vurgu ${brandColors.accent} (%10)
+
+    ═══════════════════════════════════════════════════════════
+    RENK PALETİ (SADECE BUNLARI KULLAN)
+    ═══════════════════════════════════════════════════════════
+    ${brand.palette.map(c => `- ${c.name}: ${c.hex}`).join('\n    ')}
+
+    ═══════════════════════════════════════════════════════════
+    SLIDE-SPESİFİK KURALLAR
+    ═══════════════════════════════════════════════════════════
+    ${slideIndex === 0 ? `
+    BU İLK SLIDE (HOOK):
+    - En dikkat çekici slide olmalı
+    - Kaydırmaya teşvik eden güçlü görsel
+    - Başlık en büyük ve en bold
+    ` : slideIndex === totalSlides - 1 ? `
+    BU SON SLIDE (CTA):
+    - Aksiyon çağrısı içermeli
+    - ${brand.instagram ? `@${brand.instagram} hesap bilgisi` : ''}
+    - ${brand.phone ? `İletişim: ${brand.phone}` : ''}
+    - ${brand.website ? `Web: ${brand.website}` : ''}
+    ` : `
+    BU ORTA SLIDE (İÇERİK):
+    - Bilgi veya değer sunmalı
+    - Önceki slide'dan mantıksal devam
+    `}
+
+    DİL: ${brand.outputLanguage === 'en' ? 'İNGİLİZCE' : 'TÜRKÇE'}
+    FORMAT: ${aspectRatio}
+    KALİTE: 4K, profesyonel reklam ajansı kalitesinde.
+
+    ${previousSlideBase64 ? 'ÖNCEKİ SLIDE GÖRSELİ VERİLDİ — bununla AYNI görsel stili, arka plan, font, renk kullan. TUTARLILIK KRİTİK!' : ''}
+  `;
+
+  const parts: any[] = [];
+
+  if (previousSlideBase64) {
+    parts.push({ text: "ÖNCEKİ SLIDE (bununla AYNI stil, arka plan, font kullan — sadece içerik değişmeli):" });
+    parts.push({ inlineData: { mimeType: 'image/png', data: previousSlideBase64 } });
+  }
+
+  if (referenceImageBase64) {
+    parts.push({ text: "STİL REFERANSI (layout ve yapı kaynağı):" });
+    parts.push({ inlineData: { mimeType: 'image/png', data: referenceImageBase64 } });
+  }
+
+  if (productImageBase64) {
+    parts.push({ text: "ÜRÜN GÖRSELİ:" });
+    parts.push({ inlineData: { mimeType: 'image/png', data: productImageBase64 } });
+  }
+
+  if (brand.logo) {
+    parts.push({ text: "MARKA LOGOSU (her slide'da AYNI konumda):" });
+    parts.push({ inlineData: { mimeType: 'image/png', data: brand.logo } });
+  }
+
+  parts.push({ text: prompt });
+
+  const response = await ai.models.generateContent({
+    model: 'gemini-3-pro-image-preview',
+    contents: { parts },
+    config: {
+      imageConfig: {
+        aspectRatio: aspectRatio,
+        imageSize: "2K"
+      }
+    }
+  });
+
+  const candidates = response.candidates;
+  if (!candidates || candidates.length === 0) throw new Error(`Slide ${slideIndex + 1} oluşturulamadı.`);
+
+  const contentParts = candidates[0].content.parts;
+  const imagePart = contentParts.find((p: any) => p.inlineData);
+
+  if (!imagePart || !imagePart.inlineData) {
+    throw new Error(`Slide ${slideIndex + 1} yanıtında görsel verisi bulunamadı.`);
+  }
+
+  return imagePart.inlineData.data;
+};
+
+/**
+ * Generates carousel topic suggestions for a brand.
+ */
+export const generateCarouselTopics = async (
+  brand: Brand,
+  count: number = 5,
+  referenceImages?: { base64: string; name: string }[]
+): Promise<string[]> => {
+  const ai = getAI();
+  const isEnglish = brand.outputLanguage === 'en';
+
+  const prompt = `
+    Sen sosyal medya stratejisti ve carousel uzmanısın.
+    GÖREV: ${brand.name} markası için ${count} adet CAROUSEL KONUSU öner.
+
+    MARKA:
+    - İsim: ${brand.name}
+    - Sektör: ${brand.industry}
+    - ${brand.description || ''}
+    - Ton: ${brand.tone}
+
+    KURALLAR:
+    1. Her konu bir carousel serisi (5-10 slide) için uygun olmalı
+    2. Konular hikaye anlatımına uygun, adım adım açıklanabilir olmalı
+    3. Çeşitlilik: eğitici, ilham verici, ürün/hizmet tanıtımı, nasıl yapılır, karşılaştırma
+    4. Her konu 1-2 cümle
+    5. Gerçek markaların Instagram'da paylaşacağı profesyonel konular
+
+    DİL: ${isEnglish ? 'İNGİLİZCE' : 'TÜRKÇE'}
+  `;
+
+  const parts: any[] = [];
+  if (referenceImages?.length) {
+    referenceImages.forEach((img, i) => {
+      parts.push({ text: `Referans ${i + 1}:` });
+      parts.push({ inlineData: { mimeType: 'image/jpeg', data: img.base64 } });
+    });
+  }
+  parts.push({ text: prompt });
+
+  const response = await ai.models.generateContent({
+    model: 'gemini-3-flash-preview',
+    contents: referenceImages?.length ? { parts } : { text: prompt },
+    config: {
+      responseMimeType: 'application/json',
+      responseSchema: {
+        type: Type.OBJECT,
+        properties: {
+          topics: { type: Type.ARRAY, items: { type: Type.STRING } },
+        },
+        required: ['topics'],
+      },
+    },
+  });
+
+  const text = response.text;
+  if (!text) return [];
+  const parsed = JSON.parse(text);
+  return (parsed.topics || []).slice(0, count);
+};

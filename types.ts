@@ -182,7 +182,69 @@ export interface GeneratedAsset {
   createdAt: number;
 }
 
-export type ViewState = 'dashboard' | 'brands' | 'analyzer' | 'library' | 'bulk' | 'pipeline' | 'scout';
+export type ViewState = 'dashboard' | 'brands' | 'analyzer' | 'library' | 'bulk' | 'pipeline' | 'scout' | 'carousel';
+
+// ══════════════════════════════════════════════════
+// Carousel Types
+// ══════════════════════════════════════════════════
+
+export type CarouselSlideStatus = 'pending' | 'generating' | 'completed' | 'failed';
+
+export interface CarouselSlide {
+  id: string;
+  order: number;                    // 0-based slide order
+  topic: string;                    // Slide-specific topic/content
+  imageBase64?: string;             // Generated image
+  status: CarouselSlideStatus;
+  error?: string;
+}
+
+export interface CarouselProject {
+  id: string;
+  brandId: string;
+  title: string;                    // Carousel title/theme
+  description?: string;             // Overall carousel description
+  aspectRatio: string;              // 1:1, 4:5, 9:16
+  slideCount: number;
+  slides: CarouselSlide[];
+  referenceImages: PipelineImage[]; // Style reference images
+  productImages: PipelineImage[];   // Optional product images
+  styleAnalysis?: StyleAnalysis;    // Shared style DNA for consistency
+  blueprint?: DesignBlueprint;      // Shared blueprint for layout consistency
+  carouselPlan?: CarouselContentPlan; // AI-generated content plan
+  status: 'draft' | 'planning' | 'generating' | 'completed' | 'failed';
+  creativeTone?: string;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface CarouselContentPlan {
+  theme: string;                    // Overall carousel theme/narrative
+  slideContents: {
+    slideOrder: number;
+    headline: string;
+    bodyText: string;
+    ctaText?: string;
+    visualDirection: string;        // What visual elements this slide should have
+    narrativeRole: string;          // 'hook' | 'problem' | 'solution' | 'feature' | 'social-proof' | 'cta'
+  }[];
+  colorFlow: string;                // How colors should flow across slides
+  typographyConsistency: string;    // Font rules across all slides
+  visualThread: string;             // Visual element that ties all slides together
+}
+
+export interface BrandReference {
+  id: string;
+  brandId: string;
+  imageBase64: string;
+  thumbnailBase64?: string;
+  styleAnalysis?: StyleAnalysis;
+  blueprint?: DesignBlueprint;
+  sourceType: 'carousel_ref' | 'scout' | 'upload' | 'generated';
+  tags: string[];
+  usageCount: number;
+  createdAt: string;
+}
 
 // Content Scout Types
 export interface ScoutResult {

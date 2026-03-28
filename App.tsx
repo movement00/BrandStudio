@@ -7,6 +7,7 @@ import StyleLibrary from './components/StyleLibrary';
 import BulkGenerator from './components/BulkGenerator';
 import PipelineDashboard from './components/PipelineDashboard';
 import ContentScout from './components/ContentScout';
+import CarouselGenerator from './components/CarouselGenerator';
 import { ViewState, Brand, SavedTemplate, GeneratedAsset, TemplateFolder } from './types';
 import { hasApiKey, setApiKey, getApiKey } from './services/geminiService';
 import { downloadBase64Image } from './services/downloadService';
@@ -286,6 +287,8 @@ function App() {
         return <ContentScout brands={brands} addToHistory={addToHistory} />;
       case 'bulk':
         return <BulkGenerator brands={brands} addToHistory={addToHistory} />;
+      case 'carousel':
+        return <CarouselGenerator brands={brands} addToHistory={addToHistory} />;
       case 'library':
         return (
           <StyleLibrary 
