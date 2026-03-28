@@ -38,13 +38,16 @@ const CAROUSEL_TYPES: { value: CarouselType; label: string; icon: string }[] = [
   { value: 'custom', label: 'Serbest', icon: '✨' },
 ];
 
-const BG_MODES = [
-  { value: 'gradient', label: 'Gradient', desc: 'Marka renklerinden' },
-  { value: 'upload', label: 'Görsel Yükle', desc: 'Kendi arka planın' },
-  { value: 'ai', label: 'AI Üret', desc: 'AI arka plan üretir' },
-];
+const BG_STYLES = [
+  { value: 'mesh-dark', label: 'Mesh Gradient', desc: 'Derin, zengin tonlar', icon: '🌌' },
+  { value: 'aurora', label: 'Aurora', desc: 'Kuzey ışıkları efekti', icon: '🌊' },
+  { value: 'geometric', label: 'Geometrik', desc: 'Grid + şekiller', icon: '📐' },
+  { value: 'glass-card', label: 'Glass Card', desc: 'Cam efekti kart', icon: '💎' },
+  { value: 'duotone', label: 'Duotone', desc: 'İki tonlu bölünmüş', icon: '🎭' },
+  { value: 'upload', label: 'Görsel Yükle', desc: 'Kendi arka planın', icon: '📷' },
+] as const;
 
-type BackgroundMode = 'gradient' | 'upload' | 'ai';
+type BgStyleChoice = typeof BG_STYLES[number]['value'];
 
 const CarouselGenerator: React.FC<CarouselGeneratorProps> = ({ brands, addToHistory }) => {
   // ── Config State ──
@@ -54,7 +57,7 @@ const CarouselGenerator: React.FC<CarouselGeneratorProps> = ({ brands, addToHist
   const [aspectRatio, setAspectRatio] = useState('4:5');
   const [slideCount, setSlideCount] = useState(6);
   const [fontPairing, setFontPairing] = useState<FontPairing>(FONT_PAIRINGS[0]);
-  const [bgMode, setBgMode] = useState<BackgroundMode>('gradient');
+  const [bgStyle, setBgStyle] = useState<BgStyleChoice>('mesh-dark');
   const [bgImages, setBgImages] = useState<(string | null)[]>([]);
   const [globalBgImage, setGlobalBgImage] = useState<string | null>(null);
 
@@ -152,8 +155,9 @@ const CarouselGenerator: React.FC<CarouselGeneratorProps> = ({ brands, addToHist
         carouselType,
         categoryLabel: brain.categoryLabel,
         slides: slideInputs,
-        backgroundImages: bgMode === 'upload' ? bgImages : undefined,
-        globalBackgroundImage: bgMode === 'upload' ? (globalBgImage || undefined) : undefined,
+        backgroundImages: bgStyle === 'upload' ? bgImages : undefined,
+        globalBackgroundImage: bgStyle === 'upload' ? (globalBgImage || undefined) : undefined,
+        bgStyle: bgStyle !== 'upload' ? bgStyle as any : 'mesh-dark',
       };
 
       const rendered = await renderAllCarouselSlides(renderConfig);
@@ -194,8 +198,9 @@ const CarouselGenerator: React.FC<CarouselGeneratorProps> = ({ brands, addToHist
       const rendered = await renderAllCarouselSlides({
         brand, fontPairing, aspectRatio, carouselType,
         categoryLabel: brainOutput.categoryLabel, slides: slideInputs,
-        backgroundImages: bgMode === 'upload' ? bgImages : undefined,
-        globalBackgroundImage: bgMode === 'upload' ? (globalBgImage || undefined) : undefined,
+        backgroundImages: bgStyle === 'upload' ? bgImages : undefined,
+        globalBackgroundImage: bgStyle === 'upload' ? (globalBgImage || undefined) : undefined,
+        bgStyle: bgStyle !== 'upload' ? bgStyle as any : 'mesh-dark',
       });
       setRenderedSlides(rendered);
     } catch (e) { console.error(e); }
@@ -328,26 +333,27 @@ const CarouselGenerator: React.FC<CarouselGeneratorProps> = ({ brands, addToHist
               </div>
             </div>
 
-            {/* Background Mode */}
+            {/* Background Style */}
             <div>
-              <label className="text-xs text-slate-400 uppercase tracking-wider mb-2 block">Arka Plan</label>
-              <div className="grid grid-cols-3 gap-2">
-                {BG_MODES.map(bg => (
-                  <button key={bg.value} onClick={() => setBgMode(bg.value as BackgroundMode)} disabled={isGenerating}
+              <label className="text-xs text-slate-400 uppercase tracking-wider mb-2 block">Arka Plan Stili</label>
+              <div className="grid grid-cols-3 gap-1.5">
+                {BG_STYLES.map(bg => (
+                  <button key={bg.value} onClick={() => setBgStyle(bg.value)} disabled={isGenerating}
                     className={`text-center py-2 rounded-xl border text-[10px] transition-all ${
-                      bgMode === bg.value ? 'border-lumina-gold/50 bg-lumina-gold/10 text-lumina-gold' : 'border-lumina-800 text-slate-400'
+                      bgStyle === bg.value ? 'border-lumina-gold/50 bg-lumina-gold/10 text-lumina-gold' : 'border-lumina-800 text-slate-400'
                     }`}>
-                    {bg.label}<div className="text-[9px] opacity-60">{bg.desc}</div>
+                    <span className="text-sm block">{bg.icon}</span>
+                    {bg.label}<div className="text-[8px] opacity-60">{bg.desc}</div>
                   </button>
                 ))}
               </div>
 
-              {bgMode === 'upload' && (
+              {bgStyle === 'upload' && (
                 <div className="mt-2 space-y-2">
                   <input ref={bgGlobalInputRef} type="file" accept="image/*" className="hidden" onChange={e => handleBgUpload(e.target.files)} />
                   <button onClick={() => bgGlobalInputRef.current?.click()}
                     className="w-full border border-dashed border-lumina-800 rounded-lg py-2 text-xs text-slate-500 hover:border-lumina-gold/40 transition-all">
-                    <Upload size={14} className="inline mr-1" /> {globalBgImage ? 'Arka plan yüklendi ✓' : 'Tüm slide\'lar için arka plan yükle'}
+                    <Upload size={14} className="inline mr-1" /> {globalBgImage ? 'Arka plan yüklendi' : 'Görsel yükle'}
                   </button>
                   {globalBgImage && (
                     <img src={`data:image/png;base64,${globalBgImage}`} className="w-full h-20 object-cover rounded-lg border border-lumina-800" />

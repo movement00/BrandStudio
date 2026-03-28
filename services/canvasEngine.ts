@@ -29,6 +29,7 @@ export interface CarouselRenderConfig {
   slides: SlideRenderInput[];
   backgroundImages?: (string | null)[];
   globalBackgroundImage?: string;
+  bgStyle?: 'mesh-dark' | 'aurora' | 'geometric' | 'glass-card' | 'duotone';
 }
 
 const ASPECT_DIMS: Record<string, { w: number; h: number }> = {
@@ -106,93 +107,260 @@ function wrapText(ctx: CanvasRenderingContext2D, text: string, maxW: number): st
 }
 
 // ═══════════════════════════════════════════════════
-// PROFESSIONAL BACKGROUND RENDERING
+// STUNNING PROGRAMMATIC BACKGROUNDS
+// Mesh gradients, aurora effects, geometric patterns
 // ═══════════════════════════════════════════════════
 
-function drawProfessionalBackground(
+type BgStyle = 'mesh-dark' | 'mesh-light' | 'aurora' | 'geometric' | 'glass-card' | 'duotone';
+
+function drawStunningBackground(
   ctx: CanvasRenderingContext2D,
   w: number, h: number,
-  template: CarouselTemplate,
   bc: { dominant: string; secondary: string; accent: string },
   slideIndex: number,
-  totalSlides: number
+  totalSlides: number,
+  bgStyle: BgStyle = 'mesh-dark'
 ) {
-  const bgType = template.background.primaryColorType;
-  const isDark = ['dark', 'brand-dominant', 'brand-secondary'].includes(bgType);
+  const { r: dr, g: dg, b: db } = hexToRgb(bc.dominant);
+  const { r: sr, g: sg, b: sb } = hexToRgb(bc.secondary);
+  const { r: ar, g: ag, b: ab } = hexToRgb(bc.accent || bc.dominant);
 
-  // Base color
-  const baseColor = resolveColor(bgType, {} as Brand, bc);
+  switch (bgStyle) {
+    case 'mesh-dark': {
+      // Deep dark base
+      ctx.fillStyle = '#07070E';
+      ctx.fillRect(0, 0, w, h);
 
-  // Multi-stop gradient for depth
-  if (template.background.type === 'gradient-linear' || template.background.type === 'solid') {
-    const angle = template.background.gradientAngle || 145;
-    const rad = (angle * Math.PI) / 180;
-    const grad = ctx.createLinearGradient(
-      w / 2 - Math.cos(rad) * w, h / 2 - Math.sin(rad) * h,
-      w / 2 + Math.cos(rad) * w, h / 2 + Math.sin(rad) * h
-    );
+      // Mesh gradient: multiple overlapping radial gradients
+      const blobs = [
+        { x: w * 0.15, y: h * 0.2, r: w * 0.7, color: bc.dominant, alpha: 0.15 },
+        { x: w * 0.8, y: h * 0.6, r: w * 0.6, color: bc.secondary, alpha: 0.12 },
+        { x: w * 0.5, y: h * 0.9, r: w * 0.5, color: bc.accent || bc.dominant, alpha: 0.08 },
+        { x: w * 0.9, y: h * 0.1, r: w * 0.4, color: bc.dominant, alpha: 0.06 },
+        { x: w * 0.2, y: h * 0.7, r: w * 0.35, color: bc.secondary, alpha: 0.05 },
+      ];
 
-    if (isDark) {
-      grad.addColorStop(0, '#0A0A14');
-      grad.addColorStop(0.3, '#0F0F1E');
-      grad.addColorStop(0.7, darken(bc.dominant, 0.85));
-      grad.addColorStop(1, '#0A0A14');
-    } else {
-      grad.addColorStop(0, '#FFFFFF');
-      grad.addColorStop(0.5, '#F8F9FA');
-      grad.addColorStop(1, lighten(bc.dominant, 0.92));
-    }
-    ctx.fillStyle = grad;
-    ctx.fillRect(0, 0, w, h);
-  }
+      // Shift blobs based on slide index for variety
+      const shift = slideIndex * 0.08;
+      for (const blob of blobs) {
+        const bx = blob.x + Math.sin(slideIndex * 1.2) * w * shift;
+        const by = blob.y + Math.cos(slideIndex * 0.8) * h * shift * 0.5;
+        const { r, g, b } = hexToRgb(blob.color);
+        const grad = ctx.createRadialGradient(bx, by, 0, bx, by, blob.r);
+        grad.addColorStop(0, `rgba(${r},${g},${b},${blob.alpha})`);
+        grad.addColorStop(0.6, `rgba(${r},${g},${b},${blob.alpha * 0.3})`);
+        grad.addColorStop(1, 'rgba(0,0,0,0)');
+        ctx.fillStyle = grad;
+        ctx.fillRect(0, 0, w, h);
+      }
 
-  // Quote template: brand color background
-  if (template.category === 'quote') {
-    const grad = ctx.createLinearGradient(0, 0, w, h);
-    grad.addColorStop(0, bc.dominant);
-    grad.addColorStop(1, darken(bc.dominant, 0.3));
-    ctx.fillStyle = grad;
-    ctx.fillRect(0, 0, w, h);
-  }
-
-  // Subtle noise texture (dots pattern)
-  if (isDark) {
-    ctx.save();
-    ctx.globalAlpha = 0.03;
-    for (let nx = 0; nx < w; nx += 4) {
-      for (let ny = 0; ny < h; ny += 4) {
-        if (Math.random() > 0.5) {
-          ctx.fillStyle = '#FFFFFF';
-          ctx.fillRect(nx, ny, 1, 1);
+      // Subtle noise
+      ctx.save();
+      ctx.globalAlpha = 0.025;
+      for (let nx = 0; nx < w; nx += 3) {
+        for (let ny = 0; ny < h; ny += 3) {
+          if (Math.random() > 0.6) {
+            ctx.fillStyle = '#FFFFFF';
+            ctx.fillRect(nx, ny, 1, 1);
+          }
         }
       }
+      ctx.restore();
+      break;
     }
-    ctx.restore();
+
+    case 'aurora': {
+      // Dark base
+      ctx.fillStyle = '#05050F';
+      ctx.fillRect(0, 0, w, h);
+
+      // Aurora waves — flowing color bands
+      const waves = [
+        { yBase: h * 0.3, amplitude: h * 0.15, color: bc.dominant, alpha: 0.2, freq: 1.5 },
+        { yBase: h * 0.45, amplitude: h * 0.12, color: bc.secondary, alpha: 0.15, freq: 2.0 },
+        { yBase: h * 0.35, amplitude: h * 0.1, color: bc.accent || bc.dominant, alpha: 0.1, freq: 2.5 },
+      ];
+
+      for (const wave of waves) {
+        const { r, g, b } = hexToRgb(wave.color);
+        ctx.save();
+        ctx.globalAlpha = wave.alpha;
+
+        // Draw wave band
+        ctx.beginPath();
+        ctx.moveTo(0, h);
+        for (let x = 0; x <= w; x += 2) {
+          const phase = slideIndex * 0.5 + x * 0.003 * wave.freq;
+          const y = wave.yBase + Math.sin(phase) * wave.amplitude + Math.sin(phase * 0.7) * wave.amplitude * 0.5;
+          ctx.lineTo(x, y);
+        }
+        ctx.lineTo(w, h);
+        ctx.closePath();
+
+        // Gradient fill for wave
+        const wGrad = ctx.createLinearGradient(0, wave.yBase - wave.amplitude, 0, wave.yBase + wave.amplitude * 2);
+        wGrad.addColorStop(0, `rgba(${r},${g},${b},0)`);
+        wGrad.addColorStop(0.3, `rgba(${r},${g},${b},0.8)`);
+        wGrad.addColorStop(0.7, `rgba(${r},${g},${b},0.3)`);
+        wGrad.addColorStop(1, `rgba(${r},${g},${b},0)`);
+        ctx.fillStyle = wGrad;
+        ctx.fill();
+        ctx.restore();
+      }
+
+      // Star-like dots
+      ctx.save();
+      ctx.fillStyle = '#FFFFFF';
+      for (let s = 0; s < 40; s++) {
+        const sx = (Math.sin(s * 7.3 + slideIndex) * 0.5 + 0.5) * w;
+        const sy = (Math.cos(s * 11.7 + slideIndex) * 0.5 + 0.5) * h * 0.5;
+        ctx.globalAlpha = 0.1 + Math.random() * 0.2;
+        ctx.beginPath();
+        ctx.arc(sx, sy, 1 + Math.random(), 0, Math.PI * 2);
+        ctx.fill();
+      }
+      ctx.restore();
+      break;
+    }
+
+    case 'geometric': {
+      // Solid brand background
+      ctx.fillStyle = darken(bc.dominant, 0.7);
+      ctx.fillRect(0, 0, w, h);
+
+      // Large geometric shapes
+      ctx.save();
+      ctx.globalAlpha = 0.06;
+
+      // Triangles
+      for (let t = 0; t < 5; t++) {
+        const tx = w * (0.1 + t * 0.2 + Math.sin(slideIndex + t) * 0.1);
+        const ty = h * (0.2 + t * 0.15);
+        const size = w * (0.15 + t * 0.05);
+        ctx.beginPath();
+        ctx.moveTo(tx, ty - size);
+        ctx.lineTo(tx + size, ty + size * 0.6);
+        ctx.lineTo(tx - size, ty + size * 0.6);
+        ctx.closePath();
+        ctx.fillStyle = t % 2 === 0 ? bc.dominant : bc.secondary;
+        ctx.fill();
+      }
+
+      // Circles
+      for (let c = 0; c < 3; c++) {
+        const cx = w * (0.3 + c * 0.25);
+        const cy = h * (0.4 + c * 0.2);
+        const cr = w * (0.08 + c * 0.04);
+        ctx.beginPath();
+        ctx.arc(cx, cy, cr, 0, Math.PI * 2);
+        ctx.strokeStyle = bc.accent || bc.dominant;
+        ctx.lineWidth = 2;
+        ctx.globalAlpha = 0.1;
+        ctx.stroke();
+      }
+      ctx.restore();
+
+      // Grid overlay
+      ctx.save();
+      ctx.strokeStyle = bc.dominant;
+      ctx.globalAlpha = 0.04;
+      ctx.lineWidth = 1;
+      const gridSize = 60;
+      for (let gx = 0; gx < w; gx += gridSize) {
+        ctx.beginPath(); ctx.moveTo(gx, 0); ctx.lineTo(gx, h); ctx.stroke();
+      }
+      for (let gy = 0; gy < h; gy += gridSize) {
+        ctx.beginPath(); ctx.moveTo(0, gy); ctx.lineTo(w, gy); ctx.stroke();
+      }
+      ctx.restore();
+
+      // Brand color top gradient
+      const topGrad = ctx.createLinearGradient(0, 0, 0, h * 0.3);
+      topGrad.addColorStop(0, `rgba(${dr},${dg},${db},0.15)`);
+      topGrad.addColorStop(1, 'rgba(0,0,0,0)');
+      ctx.fillStyle = topGrad;
+      ctx.fillRect(0, 0, w, h * 0.3);
+      break;
+    }
+
+    case 'glass-card': {
+      // Rich gradient base
+      const base = ctx.createLinearGradient(0, 0, w, h);
+      base.addColorStop(0, darken(bc.dominant, 0.6));
+      base.addColorStop(0.5, darken(bc.secondary, 0.5));
+      base.addColorStop(1, darken(bc.dominant, 0.7));
+      ctx.fillStyle = base;
+      ctx.fillRect(0, 0, w, h);
+
+      // Blurred color blobs
+      const blobs2 = [
+        { x: w * 0.2, y: h * 0.3, r: w * 0.4, color: bc.dominant },
+        { x: w * 0.8, y: h * 0.7, r: w * 0.35, color: bc.secondary },
+      ];
+      for (const bl of blobs2) {
+        const { r, g, b } = hexToRgb(bl.color);
+        const g2 = ctx.createRadialGradient(bl.x, bl.y, 0, bl.x, bl.y, bl.r);
+        g2.addColorStop(0, `rgba(${r},${g},${b},0.2)`);
+        g2.addColorStop(1, 'rgba(0,0,0,0)');
+        ctx.fillStyle = g2;
+        ctx.fillRect(0, 0, w, h);
+      }
+
+      // Glass card in center
+      const cardPad = w * 0.06;
+      const cardY = h * 0.12;
+      const cardW = w - cardPad * 2;
+      const cardH = h - cardY - h * 0.08;
+      ctx.save();
+      ctx.fillStyle = 'rgba(255,255,255,0.04)';
+      ctx.beginPath();
+      ctx.roundRect(cardPad, cardY, cardW, cardH, 24);
+      ctx.fill();
+      ctx.strokeStyle = 'rgba(255,255,255,0.08)';
+      ctx.lineWidth = 1;
+      ctx.stroke();
+      ctx.restore();
+      break;
+    }
+
+    case 'duotone': {
+      // Two-color split
+      const splitX = w * 0.4;
+      // Left side - dominant dark
+      ctx.fillStyle = darken(bc.dominant, 0.6);
+      ctx.fillRect(0, 0, splitX, h);
+      // Right side - slightly lighter
+      ctx.fillStyle = darken(bc.dominant, 0.75);
+      ctx.fillRect(splitX, 0, w - splitX, h);
+      // Diagonal split line with gradient
+      ctx.save();
+      ctx.beginPath();
+      ctx.moveTo(splitX - w * 0.1, 0);
+      ctx.lineTo(splitX + w * 0.1, h);
+      ctx.lineTo(splitX + w * 0.15, h);
+      ctx.lineTo(splitX - w * 0.05, 0);
+      ctx.closePath();
+      const dGrad = ctx.createLinearGradient(splitX - w * 0.1, 0, splitX + w * 0.1, h);
+      dGrad.addColorStop(0, `rgba(${dr},${dg},${db},0.15)`);
+      dGrad.addColorStop(0.5, `rgba(${dr},${dg},${db},0.3)`);
+      dGrad.addColorStop(1, `rgba(${dr},${dg},${db},0.1)`);
+      ctx.fillStyle = dGrad;
+      ctx.fill();
+      ctx.restore();
+      break;
+    }
+
+    default: {
+      // Mesh dark fallback
+      ctx.fillStyle = '#07070E';
+      ctx.fillRect(0, 0, w, h);
+      const g1 = ctx.createRadialGradient(w * 0.3, h * 0.3, 0, w * 0.3, h * 0.3, w * 0.6);
+      g1.addColorStop(0, `rgba(${dr},${dg},${db},0.12)`);
+      g1.addColorStop(1, 'rgba(0,0,0,0)');
+      ctx.fillStyle = g1;
+      ctx.fillRect(0, 0, w, h);
+    }
   }
-
-  // Ambient glow from brand color
-  ctx.save();
-  const glowX = w * (0.3 + slideIndex * 0.1);
-  const glowY = h * 0.3;
-  const glowR = w * 0.6;
-  const glow = ctx.createRadialGradient(glowX, glowY, 0, glowX, glowY, glowR);
-  const { r, g, b } = hexToRgb(bc.dominant);
-  glow.addColorStop(0, `rgba(${r},${g},${b},0.08)`);
-  glow.addColorStop(0.5, `rgba(${r},${g},${b},0.03)`);
-  glow.addColorStop(1, 'rgba(0,0,0,0)');
-  ctx.fillStyle = glow;
-  ctx.fillRect(0, 0, w, h);
-  ctx.restore();
-
-  // Secondary glow (bottom)
-  ctx.save();
-  const glow2 = ctx.createRadialGradient(w * 0.7, h * 0.8, 0, w * 0.7, h * 0.8, w * 0.5);
-  const { r: r2, g: g2, b: b2 } = hexToRgb(bc.secondary);
-  glow2.addColorStop(0, `rgba(${r2},${g2},${b2},0.05)`);
-  glow2.addColorStop(1, 'rgba(0,0,0,0)');
-  ctx.fillStyle = glow2;
-  ctx.fillRect(0, 0, w, h);
-  ctx.restore();
 }
 
 // ═══════════════════════════════════════════════════
@@ -324,10 +492,10 @@ export async function renderCarouselSlide(
       ctx.fillStyle = `rgba(0,0,0,${ov})`;
       ctx.fillRect(0, 0, w, h);
     } catch {
-      drawProfessionalBackground(ctx, w, h, template, bc, slideInput.slideIndex, slideInput.totalSlides);
+      drawStunningBackground(ctx, w, h, bc, slideInput.slideIndex, slideInput.totalSlides, config.bgStyle || 'mesh-dark');
     }
   } else {
-    drawProfessionalBackground(ctx, w, h, template, bc, slideInput.slideIndex, slideInput.totalSlides);
+    drawStunningBackground(ctx, w, h, bc, slideInput.slideIndex, slideInput.totalSlides, config.bgStyle || 'mesh-dark');
   }
 
   // ── 2. Decorations ──
