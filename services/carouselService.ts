@@ -331,31 +331,15 @@ export class CarouselOrchestrator {
 
       if (this.aborted) throw new Error('İptal edildi.');
 
-      // ── Step 3.5: Generate Design Directives (if blueprint available) ──
-      let directives: DesignDirectives | null = null;
-      if (hasReferences && blueprint) {
-        this.emit({ type: 'status', message: 'Tasarım direktifleri oluşturuluyor...' });
-        directives = await generateDesignDirectives(
-          brand,
-          project.title,
-          styleAnalysis!,
-          project.aspectRatio,
-          project.creativeTone
-        );
-        this.emit({ type: 'log', message: 'Tasarım direktifleri hazır.' });
-        if (this.aborted) throw new Error('İptal edildi.');
-      }
-
-      // ── Step 4: Generate slides ──
-      const useBlueprint = hasReferences && blueprint && (project.textMode === 'ai');
+      // ── Step 4: Generate slides — each from its OWN reference blueprint ──
+      const useBlueprint = hasReferences && (project.textMode === 'ai');
       this.emit({ type: 'status', message: useBlueprint
-        ? 'Blueprint pipeline ile slide\'lar üretiliyor (AI metin + katman)...'
+        ? 'Blueprint pipeline ile slide\'lar üretiliyor (her slide kendi referansından)...'
         : 'Slide arka planları üretiliyor...'
       });
 
       const slides: CarouselSlide[] = [];
-      let masterSlideBase64: string | null = null;
-
+      let previousSlideBase64: string | null = null; // For consistency reference (not cloning)
       for (let i = 0; i < carouselPlan.slideContents.length; i++) {
         if (this.aborted) throw new Error('İptal edildi.');
 
@@ -366,7 +350,6 @@ export class CarouselOrchestrator {
         const existingSlide = updatedProject.slides.find(s => s.order === i && s.status === 'completed' && s.imageBase64);
         if (existingSlide) {
           slides.push(existingSlide);
-          if (i === 0) masterSlideBase64 = existingSlide.imageBase64!;
           this.emit({ type: 'slide-update', message: `Slide ${i + 1} zaten mevcut, atlanıyor.`, slideIndex: i });
           continue;
         }
@@ -381,7 +364,7 @@ export class CarouselOrchestrator {
         this.emit({ type: 'slide-update', message: `Slide ${i + 1}/${carouselPlan.slideContents.length} üretiliyor...`, slideIndex: i });
 
         try {
-          // Pick reference & product images
+          // Each slide uses its OWN reference image (rotate if fewer refs than slides)
           const refIdx = hasReferences ? i % project.referenceImages.length : -1;
           const refBase64 = hasReferences ? project.referenceImages[refIdx].base64 : null;
           const refId = hasReferences ? project.referenceImages[refIdx].id : null;
@@ -393,57 +376,69 @@ export class CarouselOrchestrator {
           let imageBase64: string;
 
           if (useBlueprint && slideRefAnalysis) {
-            // ═══ BLUEPRINT PIPELINE (güçlü sistem) ═══
-            // AI metin yazar, katman katman yeniden üretir
+            // ═══ BLUEPRINT PIPELINE — HER SLIDE KENDİ REFERANSINDAN ═══
             const slideBp = slideRefAnalysis.blueprint;
+            const slideStyle = slideRefAnalysis.styleAnalysis;
             const slideTopic = `${slideContent.headline} — ${slideContent.bodyText}`;
 
-            this.emit({ type: 'log', message: `Slide ${i + 1}: Blueprint + ContentPlan ile üretiliyor...` });
+            // Generate directives for THIS slide's reference style
+            this.emit({ type: 'log', message: `Slide ${i + 1}: Ref ${refIdx + 1} blueprint'inden direktifler oluşturuluyor...` });
+            const slideDirectives = await generateDesignDirectives(
+              brand,
+              slideTopic,
+              slideStyle,
+              project.aspectRatio,
+              project.creativeTone
+            );
+            if (this.aborted) throw new Error('İptal edildi.');
 
-            // Generate content plan for this slide's blueprint layers
-            let contentPlan: ContentPlan | null = null;
-            if (directives) {
-              contentPlan = await generateContentPlan(
-                slideBp,
-                brand,
-                slideTopic,
-                directives,
-                project.creativeTone
-              );
-            }
+            // Generate content plan for THIS slide's blueprint layers
+            this.emit({ type: 'log', message: `Slide ${i + 1}: ${slideBp.layers.length} katman için içerik planı oluşturuluyor...` });
+            const contentPlan = await generateContentPlan(
+              slideBp,
+              brand,
+              slideTopic,
+              slideDirectives,
+              project.creativeTone
+            );
+            if (this.aborted) throw new Error('İptal edildi.');
 
-            // Reconstruct from blueprint with brand colors + content plan
+            // Reconstruct from THIS slide's own blueprint + its own content
+            // Pass previous slide for carousel consistency (icon style, numbering, decorations)
+            this.emit({ type: 'log', message: `Slide ${i + 1}: Blueprint'ten yeniden oluşturuluyor (${slideBp.layers.length} katman)...` });
             imageBase64 = await reconstructFromBlueprint(
               slideBp,
               brand,
               slideTopic,
               project.aspectRatio,
-              i === 0 ? refBase64 : masterSlideBase64,
+              refBase64,           // THIS slide's own reference image
               productBase64,
               contentPlan,
-              directives
+              slideDirectives,
+              null,                // assetPlan
+              previousSlideBase64  // carousel consistency reference
             );
           } else {
-            // ═══ STANDARD PIPELINE (arka plan + canvas overlay) ═══
+            // ═══ STANDARD PIPELINE (brand-kit veya canvas mode) ═══
             imageBase64 = await generateCarouselSlide(
               brand,
               slideContent,
               carouselPlan,
               slideRefAnalysis?.styleAnalysis || null,
               slideRefAnalysis?.blueprint || null,
-              i === 0 ? refBase64 : null,
+              refBase64,              // THIS slide's own reference
               productBase64,
               project.aspectRatio,
               i,
               carouselPlan.slideContents.length,
-              i === 0 ? null : masterSlideBase64,
+              previousSlideBase64,    // Previous slide for consistency (not cloning)
               project.carouselType || 'custom'
             );
           }
 
           slide.imageBase64 = imageBase64;
           slide.status = 'completed';
-          if (i === 0) masterSlideBase64 = imageBase64;
+          previousSlideBase64 = imageBase64; // For next slide's consistency reference
 
           // Create text overlays for canvas mode
           if (project.textMode === 'canvas') {

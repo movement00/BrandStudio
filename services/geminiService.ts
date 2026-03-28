@@ -336,7 +336,8 @@ export const reconstructFromBlueprint = async (
   productImageBase64: string | null,
   contentPlan?: ContentPlan | null,
   directives?: DesignDirectives | null,
-  assetPlan?: AssetPlanResult | null
+  assetPlan?: AssetPlanResult | null,
+  carouselPrevSlideBase64?: string | null
 ): Promise<string> => {
   if (window.aistudio && window.aistudio.hasSelectedApiKey) {
     const hasKey = await window.aistudio.hasSelectedApiKey();
@@ -505,9 +506,30 @@ export const reconstructFromBlueprint = async (
     ` : ''}
 
     KALİTE: 4K, profesyonel reklam ajansı kalitesinde.
+
+    ${carouselPrevSlideBase64 ? `
+    ═══════════════════════════════════════════════════════════
+    CAROUSEL TUTARLILIK (ÖNCEKİ SLIDE VERİLDİ)
+    ═══════════════════════════════════════════════════════════
+    Bu görselin bir carousel serisinin PARÇASI olduğunu unutma.
+    Önceki slide görseli verildi. Şunlara DİKKAT ET:
+    - İkon stili ve boyutu AYNI olmalı (flat icon ise flat, outlined ise outlined)
+    - Sayfa numarası / slide göstergesi varsa AYNI konumda AYNI stilde devam et
+    - Dekoratif elementler (çizgiler, noktalar, şekiller) AYNI stilde
+    - Renk dağılımı ve tonlama UYUMLU olmalı
+    - Logo konumu ve boyutu ÖNCEKİ ile AYNI
+    - Genel layout grid'i UYUMLU (ama birebir aynı olmak zorunda değil)
+    Bu bir SERİ — her slide farklı ama AYNI dili konuşmalı.
+    ` : ''}
   `;
 
   const parts: any[] = [];
+
+  // Carousel consistency: previous slide as visual reference
+  if (carouselPrevSlideBase64) {
+    parts.push({ text: "ÖNCEKİ CAROUSEL SLIDE (ikon stili, sayfa numarası, dekoratif elementler, logo konumu AYNI kalmalı — seri tutarlılığı):" });
+    parts.push({ inlineData: { mimeType: 'image/png', data: carouselPrevSlideBase64 } });
+  }
 
   // Inject approved brand assets as images
   if (assetPlan) {
@@ -2057,72 +2079,82 @@ export const generateCarouselSlide = async (
     KALİTE: 4K, profesyonel, yüksek çözünürlük.
   `
 
-  // ── Subsequent slides: CLONE the master ──
+  // ── Subsequent slides: own blueprint but with carousel consistency ──
   : `
-    GÖREV: Verilen MASTER SLIDE görselini BİREBİR KOPYALA, sadece İÇERİĞİ değiştir.
+    Sen dünyanın en iyi reklam ajanslarında çalışmış senior bir sanat yönetmenisin.
+    GÖREV: ${totalSlides} slide'lık bir carousel serisinin ${slideIndex + 1}. slide'ını üret.
 
-    ██████████████████████████████████████████████████████████████████
-    ██  BU YENİ BİR TASARIM DEĞİL — MASTER'IN KOPYASI!            ██
-    ██  Arka plan, layout, renkler, fontlar, dekorasyon, çerçeve,  ██
-    ██  logo konumu, etiket konumu, ok stili — HEPSİ AYNI KALMALI. ██
-    ██  SADECE metin içeriği ve varsa ikon/illüstrasyon değişmeli.  ██
-    ██████████████████████████████████████████████████████████████████
+    ═══════════════════════════════════════════════════════════
+    MARKA
+    ═══════════════════════════════════════════════════════════
+    İsim: ${brand.name}
+    Sektör: ${brand.industry}
+    ${brand.description ? `Açıklama: ${brand.description}` : ''}
+    Ton: ${brand.tone}
 
-    MASTER SLIDE verildi. Bunu incele ve AYNI görseli üret, sadece şu değişikliklerle:
+    ═══════════════════════════════════════════════════════════
+    CAROUSEL TİPİ
+    ═══════════════════════════════════════════════════════════
+    ${typeDirective}
 
-    DEĞİŞECEK ŞEYLER:
-    ┌─────────────────────────────────────────────┐
-    │ ✓ Başlık metni → "${slideContent.headline}" │
-    │ ✓ Açıklama metni → "${slideContent.bodyText}" │
-    ${slideContent.ctaText ? `│ ✓ CTA metni → "${slideContent.ctaText}"      │\n` : ''}│ ✓ İkon/illüstrasyon (konuya uygun)           │
-    └─────────────────────────────────────────────┘
+    ═══════════════════════════════════════════════════════════
+    İÇERİK (bu slide'ın metinleri)
+    ═══════════════════════════════════════════════════════════
+    Tema: ${carouselPlan.theme}
+    Slide ${slideIndex + 1}/${totalSlides} — Rolü: ${slideContent.narrativeRole}
+    Başlık: "${slideContent.headline}"
+    Açıklama: "${slideContent.bodyText}"
+    ${slideContent.ctaText ? `CTA: "${slideContent.ctaText}"` : ''}
+    Görsel Yön: ${slideContent.visualDirection}
 
-    DEĞİŞMEYECEK ŞEYLER (BİREBİR AYNI KALMALI):
-    ┌─────────────────────────────────────────────┐
-    │ ✗ Arka plan rengi/deseni/gradyanı           │
-    │ ✗ Logo konumu ve stili                      │
-    │ ✗ Sağ üst etiket (aynı metin, aynı stil)   │
-    │ ✗ Font ailesi, boyutu, ağırlığı             │
-    │ ✗ Alt bölgedeki web/instagram bilgisi        │
-    │ ✗ "Kaydır →" oku (aynı konum, aynı renk)   │
-    │ ✗ Çerçeve, bordür, dekoratif elementler     │
-    │ ✗ Padding, margin, boşluklar                │
-    │ ✗ Genel layout grid yapısı                  │
-    └─────────────────────────────────────────────┘
+    ${hasReference && styleAnalysis ? `
+    STİL DNA (bu slide'ın kendi referansından):
+    Kompozisyon: ${styleAnalysis.composition}
+    Mood: ${styleAnalysis.mood}
+    Artistik Stil: ${styleAnalysis.artisticStyle}
+    ` : ''}
+
+    ═══════════════════════════════════════════════════════════
+    RENK PALETİ
+    ═══════════════════════════════════════════════════════════
+    ${brand.palette.map(c => `- ${c.name}: ${c.hex}`).join('\n    ')}
+
+    ═══════════════════════════════════════════════════════════
+    CAROUSEL SERİ TUTARLILIĞI
+    ═══════════════════════════════════════════════════════════
+    ${previousSlideBase64 ? `
+    ÖNCEKİ SLIDE GÖRSELİ VERİLDİ. Bu bir SERİ — şunlara dikkat et:
+    - İkon stili: Önceki slide'daki ikon stiliyle AYNI (flat/outlined/filled)
+    - Sayfa numarası / gösterge: Varsa AYNI konumda, AYNI stilde devam et
+    - Dekoratif elementler: Çizgiler, noktalar, şekiller AYNI stilde
+    - Logo: AYNI konum ve boyut
+    - Renk dağılımı: UYUMLU (aynı palet)
+    - Genel hissiyat: Serinin devamı olduğu AÇIKÇA anlaşılmalı
+    Ama bu slide'ın KENDİ referans görselinin layout'unu kullan.
+    ` : 'Bu serinin ilk slide\'ı — tasarım dilini belirle.'}
 
     ${isLastSlide ? `
-    SON SLIDE FARKI:
-    - "Kaydır →" oku KALDIR — bu son slide
-    - Yerine CTA butonu veya iletişim bilgisi koy
-    - ${brand.instagram ? `@${brand.instagram}` : ''}
-    - ${brand.phone ? `Telefon: ${brand.phone}` : ''}
-    - ${brand.website ? `Web: ${brand.website}` : ''}
-    ` : `
-    ORTA SLIDE (${slideIndex + 1}/${totalSlides}):
-    - Seri akışında ${slideIndex + 1}. slide
-    - Görsel Yön: ${slideContent.visualDirection}
-    - Narrative Rolü: ${slideContent.narrativeRole}
-    `}
+    SON SLIDE:
+    - CTA odaklı kapanış
+    - ${brand.instagram ? `@${brand.instagram}` : ''} ${brand.phone || ''} ${brand.website || ''}
+    ` : ''}
 
-    MARKA: ${brand.name} (${brand.industry})
     DİL: ${brand.outputLanguage === 'en' ? 'İNGİLİZCE' : 'TÜRKÇE'}
     FORMAT: ${aspectRatio}
-    KALİTE: 4K, profesyonel.
-
-    TEKRAR: Bu YENİ bir tasarım DEĞİL. MASTER slide ile PİKSEL PİKSEL AYNI, sadece metin ve ikon değişiyor.
+    KALİTE: 4K, profesyonel, yüksek çözünürlük.
   `;
 
   const parts: any[] = [];
 
   if (!isFirstSlide && previousSlideBase64) {
-    // For all slides after the first: send the MASTER (first slide) as the template to clone
-    parts.push({ text: "MASTER SLIDE — bunu BİREBİR KOPYALA, sadece metin içeriğini ve ikonu değiştir. Layout, renkler, dekorasyon, logo konumu, ok stili HEPSİ AYNI:" });
+    // Previous slide for CONSISTENCY reference (not cloning)
+    parts.push({ text: "ÖNCEKİ CAROUSEL SLIDE (seri tutarlılığı için — ikon stili, dekorasyon, sayfa göstergesi AYNI kalmalı, ama bu slide'ın kendi layout'unu kullan):" });
     parts.push({ inlineData: { mimeType: 'image/png', data: previousSlideBase64 } });
   }
 
-  if (isFirstSlide && referenceImageBase64) {
-    // First slide only: use style reference
-    parts.push({ text: "STİL REFERANSI (bu görselin yapısını ve stilini baz al):" });
+  if (referenceImageBase64) {
+    // THIS slide's own reference
+    parts.push({ text: "BU SLIDE'IN REFERANS GÖRSELİ (bu görselin layout ve yapısını baz al):" });
     parts.push({ inlineData: { mimeType: 'image/png', data: referenceImageBase64 } });
   }
 
