@@ -1,496 +1,479 @@
 // ═══════════════════════════════════════════════════════════════════
-// Canvas Render Engine — Programmatic slide composition
-// AI generates background only, everything else rendered via Canvas API
+// Canvas Render Engine v2 — Template-based pixel-perfect rendering
+// AI = brain (content), Canvas = body (rendering)
 // ═══════════════════════════════════════════════════════════════════
 
-import { Brand, CarouselSlide, CarouselContentPlan, CarouselType } from '../types';
-import { FontPairing, TYPE_SCALES } from './typographySystem';
+import { Brand, CarouselContentPlan, CarouselType } from '../types';
+import { FontPairing } from './typographySystem';
+import { CarouselTemplate, TemplateElement, TEMPLATE_FONT_SIZES, selectTemplateForSlide } from './carouselTemplates';
 
 // ── Types ──
 
-export interface SlideRenderConfig {
-  brand: Brand;
-  slide: CarouselSlide;
-  slideContent: CarouselContentPlan['slideContents'][0];
-  fontPairing: FontPairing;
-  aspectRatio: string;
+export interface SlideRenderInput {
   slideIndex: number;
   totalSlides: number;
-  carouselType: CarouselType;
-  canvasWidth?: number;
+  headline: string;
+  bodyText: string;
+  ctaText?: string;
+  iconEmoji?: string;         // Emoji or unicode icon
+  slideNumber?: string;       // "01", "02", etc.
+  quoteText?: string;
+  subtitleText?: string;
 }
 
-interface CanvasContext {
-  ctx: CanvasRenderingContext2D;
-  w: number;
-  h: number;
-  scale: number; // typeScale multiplier relative to 1080
-  safeZone: number;
-  brandColors: { dominant: string; secondary: string; accent: string };
+export interface CarouselRenderConfig {
+  brand: Brand;
+  fontPairing: FontPairing;
+  aspectRatio: string;
+  carouselType: CarouselType;
+  categoryLabel: string;
+  slides: SlideRenderInput[];
+  backgroundImages?: (string | null)[];  // Per-slide base64 backgrounds (user upload or AI)
+  globalBackgroundImage?: string;         // Single background for all slides
 }
 
 // ── Dimension Maps ──
 
-const ASPECT_DIMENSIONS: Record<string, { w: number; h: number }> = {
+const ASPECT_DIMS: Record<string, { w: number; h: number }> = {
   '1:1': { w: 1080, h: 1080 },
   '4:5': { w: 1080, h: 1350 },
   '9:16': { w: 1080, h: 1920 },
 };
 
-// ── Main Render Function ──
+// ── Color Resolution ──
 
-export async function renderSlideWithOverlays(config: SlideRenderConfig): Promise<string> {
-  const dims = ASPECT_DIMENSIONS[config.aspectRatio] || ASPECT_DIMENSIONS['1:1'];
-  const canvasW = config.canvasWidth || dims.w;
-  const canvasH = Math.round(canvasW * (dims.h / dims.w));
-
-  const canvas = document.createElement('canvas');
-  canvas.width = canvasW;
-  canvas.height = canvasH;
-  const ctx = canvas.getContext('2d');
-  if (!ctx) throw new Error('Canvas context not available');
-
-  const typeScale = TYPE_SCALES[config.aspectRatio] || TYPE_SCALES['1:1'];
-  const scale = canvasW / 1080;
-  const safeZone = typeScale.safeZone * scale;
-
-  const brandColors = config.brand.palette.length >= 3
-    ? { dominant: config.brand.palette[0].hex, secondary: config.brand.palette[1].hex, accent: config.brand.palette[2].hex }
-    : { dominant: config.brand.primaryColor, secondary: config.brand.secondaryColor, accent: config.brand.primaryColor };
-
-  const cc: CanvasContext = { ctx, w: canvasW, h: canvasH, scale, safeZone, brandColors };
-
-  // 1. Draw AI-generated background
-  if (config.slide.imageBase64) {
-    await drawBackground(cc, config.slide.imageBase64);
-  } else {
-    // Fallback: solid brand color background
-    ctx.fillStyle = brandColors.dominant;
-    ctx.fillRect(0, 0, canvasW, canvasH);
-  }
-
-  // 2. Draw brand logo (top-left)
-  if (config.brand.logo) {
-    await drawLogo(cc, config.brand.logo);
-  } else {
-    drawBrandName(cc, config.brand.name, config.fontPairing);
-  }
-
-  // 3. Draw category badge (top-right)
-  drawBadge(cc, config.carouselType, config.brand, config.fontPairing);
-
-  // 4. Draw main content (headline + body)
-  drawMainContent(cc, config.slideContent, config.fontPairing, config.slideIndex, config.totalSlides, typeScale, config.carouselType);
-
-  // 5. Draw footer (website + swipe arrow)
-  drawFooter(cc, config.brand, config.fontPairing, config.slideIndex, config.totalSlides);
-
-  // 6. Draw slide number indicator (dots)
-  drawSlideIndicator(cc, config.slideIndex, config.totalSlides, brandColors);
-
-  return canvas.toDataURL('image/png').split(',')[1];
-}
-
-// ── Background ──
-
-async function drawBackground(cc: CanvasContext, base64: string): Promise<void> {
-  return new Promise((resolve, reject) => {
-    const img = new Image();
-    img.onload = () => {
-      cc.ctx.drawImage(img, 0, 0, cc.w, cc.h);
-      resolve();
-    };
-    img.onerror = reject;
-    img.src = `data:image/png;base64,${base64}`;
-  });
-}
-
-// ── Brand Logo ──
-
-async function drawLogo(cc: CanvasContext, logoBase64: string): Promise<void> {
-  return new Promise((resolve) => {
-    const img = new Image();
-    img.onload = () => {
-      const maxH = 48 * cc.scale;
-      const maxW = 160 * cc.scale;
-      let w = img.width;
-      let h = img.height;
-      const ratio = Math.min(maxW / w, maxH / h);
-      w *= ratio;
-      h *= ratio;
-      const x = cc.safeZone;
-      const y = cc.safeZone;
-      cc.ctx.drawImage(img, x, y, w, h);
-      resolve();
-    };
-    img.onerror = () => resolve(); // Skip if logo fails
-    img.src = logoBase64.startsWith('data:') ? logoBase64 : `data:image/png;base64,${logoBase64}`;
-  });
-}
-
-// ── Brand Name (when no logo) ──
-
-function drawBrandName(cc: CanvasContext, name: string, fp: FontPairing) {
-  const { ctx } = cc;
-  const fontSize = 22 * cc.scale;
-
-  ctx.save();
-  ctx.font = `${fp.heading.weight} ${fontSize}px ${fp.heading.family}`;
-  ctx.fillStyle = '#FFFFFF';
-  ctx.textAlign = 'left';
-  ctx.textBaseline = 'top';
-
-  // Background pill
-  const metrics = ctx.measureText(name);
-  const px = 10 * cc.scale;
-  const py = 6 * cc.scale;
-  const pillX = cc.safeZone;
-  const pillY = cc.safeZone;
-  const pillW = metrics.width + px * 2;
-  const pillH = fontSize + py * 2;
-  const pillR = 10 * cc.scale;
-
-  ctx.fillStyle = cc.brandColors.dominant;
-  ctx.beginPath();
-  ctx.roundRect(pillX, pillY, pillW, pillH, pillR);
-  ctx.fill();
-
-  ctx.fillStyle = '#FFFFFF';
-  ctx.fillText(name, pillX + px, pillY + py);
-  ctx.restore();
-}
-
-// ── Category Badge (top-right) ──
-
-function drawBadge(cc: CanvasContext, carouselType: CarouselType, brand: Brand, fp: FontPairing) {
-  const { ctx } = cc;
-
-  const badgeLabels: Record<CarouselType, string> = {
-    'campaign': 'KAMPANYA',
-    'product-launch': 'YENİ ÜRÜN',
-    'educational': 'BİLGİ',
-    'announcement': 'DUYURU',
-    'congratulations': 'KUTLAMA',
-    'brand-story': 'HİKAYEMİZ',
-    'tips-tricks': 'İPUÇLARI',
-    'before-after': 'KARŞILAŞTIR',
-    'testimonial': 'YORUMLAR',
-    'event': 'ETKİNLİK',
-    'motivation': 'İLHAM',
-    'custom': brand.industry.split(' ')[0].toUpperCase(),
-  };
-
-  const label = badgeLabels[carouselType] || brand.industry.split(' ')[0].toUpperCase();
-  const fontSize = 14 * cc.scale;
-  const px = 14 * cc.scale;
-  const py = 8 * cc.scale;
-  const radius = 20 * cc.scale;
-
-  ctx.save();
-  ctx.font = `600 ${fontSize}px ${fp.body.family}`;
-  const metrics = ctx.measureText(label);
-  const badgeW = metrics.width + px * 2;
-  const badgeH = fontSize + py * 2;
-  const badgeX = cc.w - cc.safeZone - badgeW;
-  const badgeY = cc.safeZone;
-
-  // Badge background (brand accent color)
-  ctx.fillStyle = cc.brandColors.accent || cc.brandColors.dominant;
-  ctx.beginPath();
-  ctx.roundRect(badgeX, badgeY, badgeW, badgeH, radius);
-  ctx.fill();
-
-  // Badge text
-  ctx.fillStyle = '#FFFFFF';
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
-  ctx.fillText(label, badgeX + badgeW / 2, badgeY + badgeH / 2);
-  ctx.restore();
-}
-
-// ── Main Content (Headline + Body + Icon area) ──
-
-function drawMainContent(
-  cc: CanvasContext,
-  content: CarouselContentPlan['slideContents'][0],
-  fp: FontPairing,
-  slideIndex: number,
-  totalSlides: number,
-  typeScale: typeof TYPE_SCALES['1:1'],
-  carouselType: CarouselType
-) {
-  const { ctx, w, h, scale, safeZone } = cc;
-
-  // ── Slide number (for tips/educational/story types) ──
-  const showNumber = ['tips-tricks', 'educational', 'brand-story', 'before-after'].includes(carouselType);
-  let contentStartY = h * 0.22;
-
-  if (showNumber && slideIndex > 0 && slideIndex < totalSlides - 1) {
-    const numSize = typeScale.heading * scale * 1.8;
-    ctx.save();
-    ctx.font = `900 ${numSize}px ${fp.heading.family}`;
-    ctx.fillStyle = cc.brandColors.dominant;
-    ctx.globalAlpha = 0.15;
-    ctx.textAlign = 'left';
-    ctx.textBaseline = 'top';
-    const numText = String(slideIndex).padStart(2, '0');
-    ctx.fillText(numText, safeZone, contentStartY - numSize * 0.2);
-    ctx.restore();
-  }
-
-  // ── Headline ──
-  const headlineSize = typeScale.heading * scale;
-  ctx.save();
-  ctx.font = `${fp.heading.weight} ${headlineSize}px ${fp.heading.family}`;
-  if (fp.heading.textTransform === 'uppercase') {
-    // Already handled by text content
-  }
-  ctx.fillStyle = '#1A1A1A'; // Near-black for readability
-  ctx.textAlign = 'left';
-  ctx.textBaseline = 'top';
-
-  const headlineText = fp.heading.textTransform === 'uppercase'
-    ? content.headline.toUpperCase()
-    : content.headline;
-
-  const headlineMaxW = w - safeZone * 2;
-  const headlineLines = wrapText(ctx, headlineText, headlineMaxW);
-  const headlineLineHeight = headlineSize * fp.heading.lineHeight;
-  let y = contentStartY;
-
-  // Text shadow for depth
-  ctx.shadowColor = 'rgba(0,0,0,0.1)';
-  ctx.shadowBlur = 2 * scale;
-  ctx.shadowOffsetY = 1 * scale;
-
-  for (const line of headlineLines) {
-    ctx.fillText(line, safeZone, y, headlineMaxW);
-    y += headlineLineHeight;
-  }
-  ctx.restore();
-
-  y += 16 * scale; // Gap between headline and body
-
-  // ── Body Text ──
-  if (content.bodyText) {
-    const bodySize = typeScale.body * scale;
-    ctx.save();
-    ctx.font = `${fp.body.weight} ${bodySize}px ${fp.body.family}`;
-    ctx.fillStyle = '#444444';
-    ctx.textAlign = 'left';
-    ctx.textBaseline = 'top';
-
-    const bodyMaxW = w - safeZone * 2 - 20 * scale;
-    const bodyLines = wrapText(ctx, content.bodyText, bodyMaxW);
-    const bodyLineHeight = bodySize * fp.body.lineHeight;
-
-    for (const line of bodyLines) {
-      ctx.fillText(line, safeZone, y, bodyMaxW);
-      y += bodyLineHeight;
-    }
-    ctx.restore();
-  }
-
-  // ── CTA Button (if provided, for last slide or campaign) ──
-  if (content.ctaText && (slideIndex === totalSlides - 1 || carouselType === 'campaign')) {
-    y += 24 * scale;
-    drawCTAButton(cc, content.ctaText, fp, y);
+function resolveColor(
+  colorType: TemplateElement['colorType'],
+  brand: Brand,
+  brandColors: { dominant: string; secondary: string; accent: string }
+): string {
+  switch (colorType) {
+    case 'white': return '#FFFFFF';
+    case 'dark': return '#1A1A2E';
+    case 'muted': return '#9CA3AF';
+    case 'primary': return brandColors.dominant;
+    case 'secondary': return brandColors.secondary;
+    case 'accent': return '#EF4444'; // Red for errors/wrong
+    case 'brand-dominant': return brandColors.dominant;
+    case 'brand-accent': return brandColors.accent || brandColors.dominant;
+    default: return '#FFFFFF';
   }
 }
 
-// ── CTA Button ──
-
-function drawCTAButton(cc: CanvasContext, text: string, fp: FontPairing, y: number) {
-  const { ctx, scale, safeZone } = cc;
-  const fontSize = 16 * scale;
-  const px = 24 * scale;
-  const py = 12 * scale;
-  const radius = 8 * scale;
-
-  ctx.save();
-  ctx.font = `600 ${fontSize}px ${fp.body.family}`;
-  const metrics = ctx.measureText(text);
-  const btnW = metrics.width + px * 2;
-  const btnH = fontSize + py * 2;
-
-  // Button background
-  ctx.fillStyle = cc.brandColors.dominant;
-  ctx.beginPath();
-  ctx.roundRect(safeZone, y, btnW, btnH, radius);
-  ctx.fill();
-
-  // Button text
-  ctx.fillStyle = '#FFFFFF';
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
-  ctx.fillText(text, safeZone + btnW / 2, y + btnH / 2);
-  ctx.restore();
-}
-
-// ── Footer (Website + Swipe Arrow) ──
-
-function drawFooter(cc: CanvasContext, brand: Brand, fp: FontPairing, slideIndex: number, totalSlides: number) {
-  const { ctx, w, h, scale, safeZone } = cc;
-  const isLastSlide = slideIndex === totalSlides - 1;
-  const footerY = h - safeZone - 30 * scale;
-
-  // ── Website / Contact (bottom-left) ──
-  const infoText = brand.website || brand.instagram ? `@${brand.instagram}` : brand.name.toLowerCase() + '.com';
-  const infoSize = 14 * scale;
-
-  ctx.save();
-  ctx.font = `500 ${infoSize}px ${fp.body.family}`;
-  ctx.fillStyle = '#666666';
-  ctx.textAlign = 'left';
-  ctx.textBaseline = 'bottom';
-  ctx.fillText(infoText.toUpperCase(), safeZone, footerY + 20 * scale);
-  ctx.restore();
-
-  // ── Swipe Arrow (bottom-right) — not on last slide ──
-  if (!isLastSlide) {
-    drawSwipeArrow(cc, fp);
-  } else {
-    // Last slide: show contact info instead
-    drawLastSlideContact(cc, brand, fp);
+function resolveBgColor(
+  bgType: TemplateElement['bgColorType'],
+  brandColors: { dominant: string; secondary: string; accent: string }
+): string {
+  switch (bgType) {
+    case 'brand-dominant': return brandColors.dominant;
+    case 'brand-accent': return brandColors.accent || brandColors.dominant;
+    case 'dark-overlay': return '#000000';
+    case 'light-overlay': return '#FFFFFF';
+    default: return 'transparent';
   }
 }
 
-// ── Swipe Arrow (→) ──
-
-function drawSwipeArrow(cc: CanvasContext, fp: FontPairing) {
-  const { ctx, w, h, scale, safeZone } = cc;
-  const arrowY = h - safeZone - 10 * scale;
-  const arrowX = w - safeZone;
-
-  // "KAYDIR" text
-  const textSize = 12 * scale;
-  ctx.save();
-  ctx.font = `600 ${textSize}px ${fp.body.family}`;
-  ctx.fillStyle = cc.brandColors.dominant;
-  ctx.textAlign = 'right';
-  ctx.textBaseline = 'bottom';
-  ctx.letterSpacing = `${0.08}em`;
-
-  // Arrow pill background
-  const pillW = 100 * scale;
-  const pillH = 32 * scale;
-  const pillX = arrowX - pillW;
-  const pillY = arrowY - pillH;
-  const pillR = pillH / 2;
-
-  ctx.fillStyle = cc.brandColors.dominant;
-  ctx.beginPath();
-  ctx.roundRect(pillX, pillY, pillW, pillH, pillR);
-  ctx.fill();
-
-  // Arrow icon (→)
-  ctx.fillStyle = '#FFFFFF';
-  ctx.font = `700 ${18 * scale}px ${fp.body.family}`;
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
-  ctx.fillText('→', pillX + pillW / 2, pillY + pillH / 2);
-  ctx.restore();
-}
-
-// ── Last Slide Contact Block ──
-
-function drawLastSlideContact(cc: CanvasContext, brand: Brand, fp: FontPairing) {
-  const { ctx, w, h, scale, safeZone } = cc;
-  const contactItems: string[] = [];
-  if (brand.instagram) contactItems.push(`@${brand.instagram}`);
-  if (brand.phone) contactItems.push(brand.phone);
-  if (brand.website) contactItems.push(brand.website);
-
-  if (contactItems.length === 0) return;
-
-  const fontSize = 14 * scale;
-  let y = h - safeZone - contactItems.length * (fontSize * 1.8);
-
-  ctx.save();
-  ctx.font = `500 ${fontSize}px ${fp.body.family}`;
-  ctx.fillStyle = '#666666';
-  ctx.textAlign = 'right';
-  ctx.textBaseline = 'top';
-
-  for (const item of contactItems) {
-    ctx.fillText(item, w - safeZone, y);
-    y += fontSize * 1.8;
+function resolveBackgroundColor(
+  type: string,
+  brandColors: { dominant: string; secondary: string; accent: string }
+): string {
+  switch (type) {
+    case 'brand-dominant': return brandColors.dominant;
+    case 'brand-secondary': return brandColors.secondary;
+    case 'brand-accent': return brandColors.accent;
+    case 'dark': return '#0F0F1A';
+    case 'light': return '#F5F5F0';
+    case 'white': return '#FFFFFF';
+    default: return '#0F0F1A';
   }
-  ctx.restore();
 }
 
-// ── Slide Indicator Dots ──
+// ── Should element show on this slide? ──
 
-function drawSlideIndicator(cc: CanvasContext, activeIndex: number, total: number, colors: { dominant: string }) {
-  const { ctx, w, h, scale } = cc;
-  const dotSize = 5 * scale;
-  const gap = 8 * scale;
-  const totalW = total * (dotSize * 2) + (total - 1) * gap;
-  const startX = (w - totalW) / 2;
-  const y = h - 24 * scale;
+function shouldShow(rule: TemplateElement['showOnSlides'], idx: number, total: number): boolean {
+  if (!rule || rule === 'all') return true;
+  if (rule === 'first') return idx === 0;
+  if (rule === 'last') return idx === total - 1;
+  if (rule === 'middle') return idx > 0 && idx < total - 1;
+  if (rule === 'not-last') return idx < total - 1;
+  if (rule === 'not-first') return idx > 0;
+  return true;
+}
 
-  ctx.save();
-  for (let i = 0; i < total; i++) {
-    const x = startX + i * (dotSize * 2 + gap) + dotSize;
-    ctx.beginPath();
-    ctx.arc(x, y, dotSize, 0, Math.PI * 2);
-    if (i === activeIndex) {
-      ctx.fillStyle = colors.dominant;
-    } else {
-      ctx.fillStyle = 'rgba(150,150,150,0.3)';
-    }
-    ctx.fill();
+// ── Compute position ──
+
+function computePosition(
+  el: TemplateElement,
+  canvasW: number,
+  canvasH: number,
+  textW: number,
+  textH: number
+): { x: number; y: number } {
+  const rawX = (el.x / 100) * canvasW;
+  const rawY = (el.y / 100) * canvasH;
+
+  let x = rawX;
+  let y = rawY;
+
+  switch (el.anchor) {
+    case 'top-left': break;
+    case 'top-center': x = rawX - textW / 2; break;
+    case 'top-right': x = rawX - textW; break;
+    case 'center': x = rawX - textW / 2; y = rawY - textH / 2; break;
+    case 'bottom-left': y = rawY - textH; break;
+    case 'bottom-center': x = rawX - textW / 2; y = rawY - textH; break;
+    case 'bottom-right': x = rawX - textW; y = rawY - textH; break;
   }
-  ctx.restore();
+
+  return { x, y };
 }
 
-// ── Text Wrap Helper ──
+// ── Text wrapping ──
 
 function wrapText(ctx: CanvasRenderingContext2D, text: string, maxWidth: number): string[] {
   const words = text.split(' ');
   const lines: string[] = [];
   let line = '';
-
   for (const word of words) {
-    const testLine = line + (line ? ' ' : '') + word;
-    if (ctx.measureText(testLine).width > maxWidth && line) {
+    const test = line + (line ? ' ' : '') + word;
+    if (ctx.measureText(test).width > maxWidth && line) {
       lines.push(line);
       line = word;
     } else {
-      line = testLine;
+      line = test;
     }
   }
   if (line) lines.push(line);
   return lines;
 }
 
-// ── Export All Slides ──
+// ── Load image helper ──
 
-export async function renderAllSlides(
-  slides: CarouselSlide[],
-  carouselPlan: CarouselContentPlan,
-  brand: Brand,
-  fontPairing: FontPairing,
-  aspectRatio: string,
-  carouselType: CarouselType
-): Promise<string[]> {
+function loadImage(base64: string): Promise<HTMLImageElement> {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => resolve(img);
+    img.onerror = reject;
+    img.src = base64.startsWith('data:') ? base64 : `data:image/png;base64,${base64}`;
+  });
+}
+
+// ═══════════════════════════════════════════════════
+// MAIN RENDER FUNCTION
+// ═══════════════════════════════════════════════════
+
+export async function renderCarouselSlide(
+  config: CarouselRenderConfig,
+  slideInput: SlideRenderInput,
+  template: CarouselTemplate
+): Promise<string> {
+  const dims = ASPECT_DIMS[config.aspectRatio] || ASPECT_DIMS['4:5'];
+  const canvas = document.createElement('canvas');
+  canvas.width = dims.w;
+  canvas.height = dims.h;
+  const ctx = canvas.getContext('2d')!;
+  const fontSizes = TEMPLATE_FONT_SIZES[config.aspectRatio] || TEMPLATE_FONT_SIZES['4:5'];
+
+  const brandColors = config.brand.palette.length >= 3
+    ? { dominant: config.brand.palette[0].hex, secondary: config.brand.palette[1].hex, accent: config.brand.palette[2].hex }
+    : { dominant: config.brand.primaryColor, secondary: config.brand.secondaryColor, accent: config.brand.primaryColor };
+
+  // ── 1. Draw Background ──
+  const bgImage = config.backgroundImages?.[slideInput.slideIndex] || config.globalBackgroundImage;
+
+  if (bgImage) {
+    // User-uploaded or AI-generated background
+    try {
+      const img = await loadImage(bgImage);
+      // Cover-fit
+      const imgRatio = img.width / img.height;
+      const canvasRatio = dims.w / dims.h;
+      let sx = 0, sy = 0, sw = img.width, sh = img.height;
+      if (imgRatio > canvasRatio) {
+        sw = img.height * canvasRatio;
+        sx = (img.width - sw) / 2;
+      } else {
+        sh = img.width / canvasRatio;
+        sy = (img.height - sh) / 2;
+      }
+      ctx.drawImage(img, sx, sy, sw, sh, 0, 0, dims.w, dims.h);
+
+      // Overlay
+      if (template.background.overlayOpacity) {
+        ctx.fillStyle = `rgba(0,0,0,${template.background.overlayOpacity})`;
+        ctx.fillRect(0, 0, dims.w, dims.h);
+      }
+    } catch {
+      // Fallback to solid
+      ctx.fillStyle = resolveBackgroundColor(template.background.primaryColorType, brandColors);
+      ctx.fillRect(0, 0, dims.w, dims.h);
+    }
+  } else if (template.background.type === 'gradient-linear') {
+    const angle = template.background.gradientAngle || 135;
+    const rad = (angle * Math.PI) / 180;
+    const x1 = dims.w / 2 - Math.cos(rad) * dims.w;
+    const y1 = dims.h / 2 - Math.sin(rad) * dims.h;
+    const x2 = dims.w / 2 + Math.cos(rad) * dims.w;
+    const y2 = dims.h / 2 + Math.sin(rad) * dims.h;
+    const grad = ctx.createLinearGradient(x1, y1, x2, y2);
+    grad.addColorStop(0, resolveBackgroundColor(template.background.primaryColorType, brandColors));
+    grad.addColorStop(1, resolveBackgroundColor(template.background.secondaryColorType || 'dark', brandColors));
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, dims.w, dims.h);
+  } else {
+    ctx.fillStyle = resolveBackgroundColor(template.background.primaryColorType, brandColors);
+    ctx.fillRect(0, 0, dims.w, dims.h);
+  }
+
+  // ── 2. Draw Decorations ──
+  for (const deco of template.decorations) {
+    const decoColor = resolveColor(deco.colorType as any, config.brand, brandColors);
+    ctx.save();
+    ctx.globalAlpha = deco.opacity;
+    ctx.fillStyle = decoColor;
+
+    switch (deco.type) {
+      case 'accent-bar-top':
+        ctx.fillRect(0, 0, dims.w, 5);
+        break;
+      case 'accent-bar-left':
+        ctx.fillRect(0, 0, 5, dims.h);
+        break;
+      case 'side-stripe':
+        ctx.fillRect(0, 0, dims.w * 0.12, dims.h);
+        break;
+      case 'corner-shapes':
+        ctx.beginPath();
+        ctx.arc(0, 0, dims.w * 0.15, 0, Math.PI * 0.5);
+        ctx.fill();
+        ctx.beginPath();
+        ctx.arc(dims.w, dims.h, dims.w * 0.1, Math.PI, Math.PI * 1.5);
+        ctx.fill();
+        break;
+      case 'dot-grid': {
+        const dotR = 2;
+        const gap = 30;
+        for (let gx = 60; gx < dims.w - 60; gx += gap) {
+          for (let gy = 60; gy < dims.h - 60; gy += gap) {
+            ctx.beginPath();
+            ctx.arc(gx, gy, dotR, 0, Math.PI * 2);
+            ctx.fill();
+          }
+        }
+        break;
+      }
+    }
+    ctx.restore();
+  }
+
+  // ── 3. Draw Elements ──
+  for (const el of template.elements) {
+    if (!shouldShow(el.showOnSlides, slideInput.slideIndex, slideInput.totalSlides)) continue;
+
+    const color = resolveColor(el.colorType, config.brand, brandColors);
+    const fontSize = fontSizes[el.fontSize] || 28;
+    const maxW = (el.maxWidth / 100) * dims.w;
+    const fp = el.fontType === 'heading' ? config.fontPairing.heading : config.fontPairing.body;
+    const fontFamily = fp.family;
+    const weight = el.fontWeight || fp.weight;
+    const lineH = el.lineHeight || (el.fontType === 'heading' ? fp.lineHeight : 1.5);
+
+    ctx.save();
+    ctx.globalAlpha = el.opacity ?? 1;
+
+    // Resolve content for this element
+    let content = '';
+    switch (el.role) {
+      case 'headline': content = slideInput.headline; break;
+      case 'body': content = slideInput.bodyText; break;
+      case 'subtitle': content = slideInput.subtitleText || slideInput.bodyText; break;
+      case 'cta-button': content = slideInput.ctaText || 'Daha Fazla'; break;
+      case 'slide-number': content = slideInput.slideNumber || String(slideInput.slideIndex + 1).padStart(2, '0'); break;
+      case 'brand-name': content = config.brand.name; break;
+      case 'brand-logo': content = config.brand.name; break; // Fallback text, logo image handled below
+      case 'category-badge': content = config.categoryLabel; break;
+      case 'swipe-arrow': content = '→'; break;
+      case 'footer-info': content = config.brand.website || (config.brand.instagram ? `@${config.brand.instagram}` : config.brand.name); break;
+      case 'icon-placeholder': content = slideInput.iconEmoji || '💡'; break;
+      case 'divider-line': content = '___DIVIDER___'; break;
+      case 'progress-bar': content = '___PROGRESS___'; break;
+      case 'slide-dots': content = '___DOTS___'; break;
+      case 'quote-mark': content = '"'; break;
+    }
+
+    // ── Special elements ──
+
+    if (el.role === 'divider-line') {
+      const divX = (el.x / 100) * dims.w;
+      const divY = (el.y / 100) * dims.h;
+      const divW = maxW;
+      ctx.fillStyle = color;
+      ctx.fillRect(divX, divY, divW, 3);
+      ctx.restore();
+      continue;
+    }
+
+    if (el.role === 'progress-bar') {
+      const progress = (slideInput.slideIndex + 1) / slideInput.totalSlides;
+      const barH = 4;
+      const barY = dims.h - barH;
+      // Background
+      ctx.fillStyle = 'rgba(255,255,255,0.1)';
+      ctx.fillRect(0, barY, dims.w, barH);
+      // Fill
+      ctx.fillStyle = color;
+      ctx.fillRect(0, barY, dims.w * progress, barH);
+      ctx.restore();
+      continue;
+    }
+
+    if (el.role === 'slide-dots') {
+      const dotR = 5;
+      const dotGap = 16;
+      const totalW = slideInput.totalSlides * (dotR * 2) + (slideInput.totalSlides - 1) * dotGap;
+      const startX = (dims.w - totalW) / 2;
+      const dotY = (el.y / 100) * dims.h;
+      for (let d = 0; d < slideInput.totalSlides; d++) {
+        const dx = startX + d * (dotR * 2 + dotGap) + dotR;
+        ctx.beginPath();
+        ctx.arc(dx, dotY, dotR, 0, Math.PI * 2);
+        ctx.fillStyle = d === slideInput.slideIndex ? color : 'rgba(150,150,150,0.3)';
+        ctx.fill();
+      }
+      ctx.restore();
+      continue;
+    }
+
+    if (el.role === 'brand-logo' && config.brand.logo) {
+      // Draw actual logo image
+      try {
+        const logoImg = await loadImage(config.brand.logo);
+        const maxLogoH = fontSize * 2.5;
+        const maxLogoW = maxW;
+        const ratio = Math.min(maxLogoW / logoImg.width, maxLogoH / logoImg.height);
+        const lw = logoImg.width * ratio;
+        const lh = logoImg.height * ratio;
+        const pos = computePosition(el, dims.w, dims.h, lw, lh);
+        ctx.drawImage(logoImg, pos.x, pos.y, lw, lh);
+      } catch {
+        // Fallback: draw brand name text
+        drawTextElement(ctx, config.brand.name, el, fontSize, fontFamily, weight, color, maxW, lineH, dims, brandColors);
+      }
+      ctx.restore();
+      continue;
+    }
+
+    // ── Standard text elements ──
+    if (content) {
+      drawTextElement(ctx, content, el, fontSize, fontFamily, weight, color, maxW, lineH, dims, brandColors);
+    }
+
+    ctx.restore();
+  }
+
+  return canvas.toDataURL('image/png').split(',')[1];
+}
+
+// ── Draw Text Element ──
+
+function drawTextElement(
+  ctx: CanvasRenderingContext2D,
+  content: string,
+  el: TemplateElement,
+  fontSize: number,
+  fontFamily: string,
+  weight: number,
+  color: string,
+  maxW: number,
+  lineH: number,
+  dims: { w: number; h: number },
+  brandColors: { dominant: string; secondary: string; accent: string }
+) {
+  const transform = el.textTransform === 'uppercase' ? content.toUpperCase() : content;
+
+  ctx.font = `${weight} ${fontSize}px ${fontFamily}`;
+  if (el.letterSpacing) {
+    (ctx as any).letterSpacing = `${el.letterSpacing}em`;
+  }
+
+  const lines = wrapText(ctx, transform, maxW);
+  const totalTextH = lines.length * fontSize * lineH;
+
+  // Background pill/box
+  if (el.bgColorType && el.bgColorType !== 'none') {
+    const bgColor = resolveBgColor(el.bgColorType, brandColors);
+    const pad = el.bgPadding || 10;
+    const rad = el.bgRadius || 8;
+
+    // Measure width for pill
+    const maxLineW = Math.max(...lines.map(l => ctx.measureText(l).width));
+    const bgW = maxLineW + pad * 2;
+    const bgH = totalTextH + pad * 2;
+
+    const pos = computePosition(el, dims.w, dims.h, bgW, bgH);
+
+    ctx.fillStyle = bgColor;
+    ctx.beginPath();
+    ctx.roundRect(pos.x, pos.y, bgW, bgH, rad);
+    ctx.fill();
+
+    // Draw text inside pill
+    ctx.fillStyle = color;
+    ctx.textAlign = (el.textAlign || 'center') as CanvasTextAlign;
+    ctx.textBaseline = 'top';
+    const textX = el.textAlign === 'left' ? pos.x + pad :
+                  el.textAlign === 'right' ? pos.x + bgW - pad :
+                  pos.x + bgW / 2;
+
+    for (let i = 0; i < lines.length; i++) {
+      ctx.fillText(lines[i], textX, pos.y + pad + i * fontSize * lineH, maxW);
+    }
+  } else {
+    // No background — just text
+    const pos = computePosition(el, dims.w, dims.h, maxW, totalTextH);
+
+    // Text shadow for readability
+    if (el.colorType === 'white') {
+      ctx.shadowColor = 'rgba(0,0,0,0.5)';
+      ctx.shadowBlur = 8;
+      ctx.shadowOffsetY = 2;
+    }
+
+    ctx.fillStyle = color;
+    ctx.textAlign = (el.textAlign || 'left') as CanvasTextAlign;
+    ctx.textBaseline = 'top';
+
+    const textX = el.textAlign === 'center' ? pos.x + maxW / 2 :
+                  el.textAlign === 'right' ? pos.x + maxW :
+                  pos.x;
+
+    for (let i = 0; i < lines.length; i++) {
+      ctx.fillText(lines[i], textX, pos.y + i * fontSize * lineH, maxW);
+    }
+
+    ctx.shadowColor = 'transparent';
+    ctx.shadowBlur = 0;
+  }
+
+  // Reset letter spacing
+  (ctx as any).letterSpacing = '0px';
+}
+
+// ═══════════════════════════════════════════════════
+// RENDER ALL SLIDES
+// ═══════════════════════════════════════════════════
+
+export async function renderAllCarouselSlides(config: CarouselRenderConfig): Promise<string[]> {
   const results: string[] = [];
 
-  for (let i = 0; i < slides.length; i++) {
-    const slide = slides[i];
-    const content = carouselPlan.slideContents[i];
-    if (!slide || !content) continue;
+  for (const slideInput of config.slides) {
+    const template = selectTemplateForSlide(
+      slideInput.slideIndex,
+      slideInput.totalSlides,
+      config.carouselType
+    );
 
-    const rendered = await renderSlideWithOverlays({
-      brand,
-      slide,
-      slideContent: content,
-      fontPairing,
-      aspectRatio,
-      slideIndex: i,
-      totalSlides: slides.length,
-      carouselType,
-    });
+    const rendered = await renderCarouselSlide(config, slideInput, template);
     results.push(rendered);
   }
 
