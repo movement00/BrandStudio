@@ -1,4 +1,4 @@
-import { CarouselProject, CarouselSlide, CarouselContentPlan, BrandReference, Brand, StyleAnalysis, DesignBlueprint, PipelineImage } from '../types';
+import { CarouselProject, CarouselSlide, CarouselContentPlan, BrandReference, Brand, StyleAnalysis, DesignBlueprint, PipelineImage, SlideTextOverlay } from '../types';
 import { analyzeImageStyle, decomposeToBlueprint, planCarouselContent, generateCarouselSlide } from './geminiService';
 
 // ═══════════════════════════════════════════════════
@@ -34,8 +34,8 @@ export const saveCarouselProject = async (project: CarouselProject): Promise<voi
     style_analysis: project.styleAnalysis || null,
     blueprint: project.blueprint || null,
     carousel_plan: project.carouselPlan || null,
-    reference_images: project.referenceImages,
-    product_images: project.productImages,
+    reference_images: project.referenceImages.map(r => ({ id: r.id, name: r.name })), // Don't store base64 twice
+    product_images: project.productImages.map(r => ({ id: r.id, name: r.name })),
     creative_tone: project.creativeTone || null,
     status: project.status,
     updated_at: new Date().toISOString(),
@@ -247,32 +247,45 @@ export class CarouselOrchestrator {
     onProjectUpdate(updatedProject);
 
     try {
-      // ── Step 1: Analyze style from first reference image ──
-      this.emit({ type: 'status', message: 'Referans görsel stili analiz ediliyor...' });
+      // ── Step 1 & 2: Analyze EACH reference image separately ──
+      if (!project.referenceImages.length) throw new Error('En az 1 referans görsel gerekli.');
 
-      const refImage = project.referenceImages[0];
-      if (!refImage) throw new Error('En az 1 referans görsel gerekli.');
+      let perRefAnalysis = project.perRefAnalysis || [];
 
-      let styleAnalysis = project.styleAnalysis;
-      if (!styleAnalysis) {
-        styleAnalysis = await analyzeImageStyle(refImage.base64);
-        updatedProject = { ...updatedProject, styleAnalysis };
-        onProjectUpdate(updatedProject);
-        this.emit({ type: 'log', message: `Stil analizi tamamlandı: ${styleAnalysis.artisticStyle}` });
+      if (perRefAnalysis.length < project.referenceImages.length) {
+        this.emit({ type: 'status', message: `${project.referenceImages.length} referans görsel analiz ediliyor...` });
+
+        for (let r = 0; r < project.referenceImages.length; r++) {
+          if (this.aborted) throw new Error('İptal edildi.');
+
+          const refImg = project.referenceImages[r];
+          const existing = perRefAnalysis.find(a => a.refId === refImg.id);
+          if (existing) {
+            this.emit({ type: 'log', message: `Referans ${r + 1} zaten analiz edilmiş, atlanıyor.` });
+            continue;
+          }
+
+          this.emit({ type: 'log', message: `Referans ${r + 1}/${project.referenceImages.length} analiz ediliyor: ${refImg.name}` });
+
+          const refStyle = await analyzeImageStyle(refImg.base64);
+          if (this.aborted) throw new Error('İptal edildi.');
+
+          const refBlueprint = await decomposeToBlueprint(refImg.base64);
+          if (this.aborted) throw new Error('İptal edildi.');
+
+          perRefAnalysis = [...perRefAnalysis, { refId: refImg.id, styleAnalysis: refStyle, blueprint: refBlueprint }];
+          updatedProject = { ...updatedProject, perRefAnalysis };
+          onProjectUpdate(updatedProject);
+
+          this.emit({ type: 'log', message: `Referans ${r + 1} tamamlandı: ${refStyle.artisticStyle} / ${refBlueprint.canvas.style}` });
+        }
       }
 
-      if (this.aborted) throw new Error('İptal edildi.');
-
-      // ── Step 2: Decompose blueprint ──
-      this.emit({ type: 'status', message: 'Tasarım blueprint\'i çıkarılıyor...' });
-
-      let blueprint = project.blueprint;
-      if (!blueprint) {
-        blueprint = await decomposeToBlueprint(refImage.base64);
-        updatedProject = { ...updatedProject, blueprint };
-        onProjectUpdate(updatedProject);
-        this.emit({ type: 'log', message: `Blueprint hazır: ${blueprint.canvas.style}, ${blueprint.layout.type}` });
-      }
+      // Primary style & blueprint (from first ref) — used for carousel plan
+      const styleAnalysis = perRefAnalysis[0].styleAnalysis;
+      const blueprint = perRefAnalysis[0].blueprint;
+      updatedProject = { ...updatedProject, styleAnalysis, blueprint, perRefAnalysis };
+      onProjectUpdate(updatedProject);
 
       if (this.aborted) throw new Error('İptal edildi.');
 
@@ -338,6 +351,12 @@ export class CarouselOrchestrator {
           // Pick a reference image (rotate if multiple)
           const refIdx = i % project.referenceImages.length;
           const refBase64 = project.referenceImages[refIdx].base64;
+          const refId = project.referenceImages[refIdx].id;
+
+          // Use THIS reference's own analysis (not the shared one)
+          const slideRefAnalysis = perRefAnalysis.find(a => a.refId === refId) || perRefAnalysis[0];
+          const slideStyle = slideRefAnalysis.styleAnalysis;
+          const slideBlueprint = slideRefAnalysis.blueprint;
 
           // Pick product image if available
           const productBase64 = project.productImages.length > 0
@@ -348,8 +367,8 @@ export class CarouselOrchestrator {
             brand,
             slideContent,
             carouselPlan,
-            styleAnalysis,
-            blueprint,
+            slideStyle,
+            slideBlueprint,
             refBase64,
             productBase64,
             project.aspectRatio,
@@ -361,6 +380,48 @@ export class CarouselOrchestrator {
           slide.imageBase64 = imageBase64;
           slide.status = 'completed';
           previousSlideBase64 = imageBase64;
+
+          // Create default text overlays from carousel plan
+          const defaultOverlays: SlideTextOverlay[] = [];
+          if (slideContent.headline) {
+            defaultOverlays.push({
+              id: `${slide.id}_headline`,
+              text: slideContent.headline,
+              x: 50, y: i === 0 ? 40 : 30,
+              fontSize: 32,
+              fontWeight: 'extrabold',
+              color: brand.palette[0]?.hex || '#FFFFFF',
+              bgColor: '#000000', bgOpacity: 0.5,
+              textAlign: 'center',
+              maxWidth: 85,
+            });
+          }
+          if (slideContent.bodyText) {
+            defaultOverlays.push({
+              id: `${slide.id}_body`,
+              text: slideContent.bodyText,
+              x: 50, y: i === 0 ? 55 : 50,
+              fontSize: 18,
+              fontWeight: 'normal',
+              color: '#FFFFFF',
+              textAlign: 'center',
+              maxWidth: 80,
+            });
+          }
+          if (slideContent.ctaText) {
+            defaultOverlays.push({
+              id: `${slide.id}_cta`,
+              text: slideContent.ctaText,
+              x: 50, y: 80,
+              fontSize: 16,
+              fontWeight: 'bold',
+              color: '#000000',
+              bgColor: brand.palette[0]?.hex || '#F8BE00', bgOpacity: 1,
+              textAlign: 'center',
+              maxWidth: 50,
+            });
+          }
+          slide.textOverlays = defaultOverlays;
 
           this.emit({ type: 'slide-update', message: `Slide ${i + 1} tamamlandı!`, slideIndex: i, data: imageBase64 });
         } catch (err: any) {

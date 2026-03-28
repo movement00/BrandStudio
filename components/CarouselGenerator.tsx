@@ -4,15 +4,286 @@ import {
   Loader2, Image as ImageIcon, Palette, CheckCircle2, XCircle, RotateCcw,
   Wand2, Plus, FolderOpen, Clock, AlertCircle, ImagePlus, GalleryHorizontalEnd
 } from 'lucide-react';
-import { Brand, CarouselProject, CarouselSlide, CarouselContentPlan, PipelineImage, GeneratedAsset } from '../types';
+import { Brand, CarouselProject, CarouselSlide, CarouselContentPlan, PipelineImage, GeneratedAsset, SlideTextOverlay } from '../types';
 import { fileToGenerativePart } from '../services/geminiService';
 import { generateCarouselTopics } from '../services/geminiService';
+
+// ═══════════════════════════════════════════════════
+// Text Overlay Editor Sub-component
+// ═══════════════════════════════════════════════════
+
+interface TextOverlayEditorProps {
+  slide: CarouselSlide;
+  brand: Brand;
+  onUpdate: (overlays: SlideTextOverlay[]) => void;
+  onExport: (slideId: string) => void;
+}
+
+const TextOverlayEditor: React.FC<TextOverlayEditorProps> = ({ slide, brand, onUpdate, onExport }) => {
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [showTextPanel, setShowTextPanel] = useState(true);
+
+  const overlays = slide.textOverlays || [];
+
+  const updateOverlay = (id: string, changes: Partial<SlideTextOverlay>) => {
+    const updated = overlays.map(o => o.id === id ? { ...o, ...changes } : o);
+    onUpdate(updated);
+  };
+
+  const addOverlay = () => {
+    const newOverlay: SlideTextOverlay = {
+      id: `${slide.id}_custom_${Date.now()}`,
+      text: 'Yeni metin',
+      x: 50, y: 60,
+      fontSize: 20,
+      fontWeight: 'bold',
+      color: '#FFFFFF',
+      textAlign: 'center',
+      maxWidth: 80,
+    };
+    onUpdate([...overlays, newOverlay]);
+    setEditingId(newOverlay.id);
+  };
+
+  const removeOverlay = (id: string) => {
+    onUpdate(overlays.filter(o => o.id !== id));
+    if (editingId === id) setEditingId(null);
+  };
+
+  return (
+    <div className="relative">
+      {/* Slide with Text Overlays */}
+      <div className="relative rounded-xl overflow-hidden border border-lumina-800" style={{ aspectRatio: 'auto' }}>
+        {slide.imageBase64 && (
+          <img
+            src={`data:image/png;base64,${slide.imageBase64}`}
+            className="w-full block"
+            alt={`Slide ${slide.order + 1}`}
+          />
+        )}
+
+        {/* Text Overlay Layers */}
+        {overlays.map(overlay => (
+          <div
+            key={overlay.id}
+            onClick={() => setEditingId(overlay.id)}
+            className={`absolute cursor-pointer transition-all ${
+              editingId === overlay.id ? 'ring-2 ring-lumina-gold ring-offset-1 ring-offset-transparent' : 'hover:ring-1 hover:ring-white/30'
+            }`}
+            style={{
+              left: `${overlay.x}%`,
+              top: `${overlay.y}%`,
+              transform: 'translate(-50%, -50%)',
+              maxWidth: `${overlay.maxWidth}%`,
+              textAlign: overlay.textAlign,
+              fontSize: `${overlay.fontSize}px`,
+              fontWeight: overlay.fontWeight === 'extrabold' ? 800 : overlay.fontWeight === 'bold' ? 700 : 400,
+              color: overlay.color,
+              backgroundColor: overlay.bgColor ? `${overlay.bgColor}${Math.round((overlay.bgOpacity || 0) * 255).toString(16).padStart(2, '0')}` : 'transparent',
+              padding: overlay.bgColor ? '4px 12px' : '0',
+              borderRadius: overlay.bgColor ? '6px' : '0',
+              lineHeight: 1.3,
+              textShadow: !overlay.bgColor ? '0 2px 8px rgba(0,0,0,0.8)' : 'none',
+              userSelect: 'none',
+            }}
+          >
+            {overlay.text}
+          </div>
+        ))}
+      </div>
+
+      {/* Text Controls Panel */}
+      {showTextPanel && (
+        <div className="mt-3 space-y-2">
+          <div className="flex items-center justify-between">
+            <span className="text-xs text-slate-400 uppercase tracking-wider">Metin Katmanlari</span>
+            <div className="flex gap-1">
+              <button
+                onClick={addOverlay}
+                className="text-xs px-2 py-1 rounded-lg bg-lumina-gold/20 text-lumina-gold hover:bg-lumina-gold/30 transition-all flex items-center gap-1"
+              >
+                <Plus size={12} /> Metin Ekle
+              </button>
+              <button
+                onClick={() => onExport(slide.id)}
+                className="text-xs px-2 py-1 rounded-lg bg-emerald-500/20 text-emerald-400 hover:bg-emerald-500/30 transition-all flex items-center gap-1"
+              >
+                <Download size={12} /> Kaydet
+              </button>
+            </div>
+          </div>
+
+          {overlays.map(overlay => (
+            <div
+              key={overlay.id}
+              className={`bg-lumina-950 border rounded-xl p-2.5 transition-all ${
+                editingId === overlay.id ? 'border-lumina-gold/50' : 'border-lumina-800'
+              }`}
+              onClick={() => setEditingId(overlay.id)}
+            >
+              <div className="flex items-center justify-between mb-1.5">
+                <input
+                  value={overlay.text}
+                  onChange={e => updateOverlay(overlay.id, { text: e.target.value })}
+                  className="flex-1 bg-transparent text-sm text-white border-none outline-none"
+                  placeholder="Metin..."
+                />
+                <button
+                  onClick={(e) => { e.stopPropagation(); removeOverlay(overlay.id); }}
+                  className="p-1 text-red-400 hover:text-red-300"
+                >
+                  <Trash2 size={12} />
+                </button>
+              </div>
+
+              {editingId === overlay.id && (
+                <div className="space-y-2 pt-2 border-t border-lumina-800">
+                  {/* Font Size & Weight */}
+                  <div className="flex gap-2">
+                    <div className="flex-1">
+                      <label className="text-[10px] text-slate-500 block mb-0.5">Boyut</label>
+                      <input
+                        type="range"
+                        min="10" max="64" value={overlay.fontSize}
+                        onChange={e => updateOverlay(overlay.id, { fontSize: Number(e.target.value) })}
+                        className="w-full accent-lumina-gold h-1"
+                      />
+                      <span className="text-[10px] text-slate-500">{overlay.fontSize}px</span>
+                    </div>
+                    <div>
+                      <label className="text-[10px] text-slate-500 block mb-0.5">Kalinlik</label>
+                      <div className="flex gap-1">
+                        {(['normal', 'bold', 'extrabold'] as const).map(w => (
+                          <button
+                            key={w}
+                            onClick={() => updateOverlay(overlay.id, { fontWeight: w })}
+                            className={`text-[10px] px-1.5 py-0.5 rounded ${
+                              overlay.fontWeight === w ? 'bg-lumina-gold/20 text-lumina-gold' : 'text-slate-500 hover:text-white'
+                            }`}
+                          >
+                            {w === 'normal' ? 'N' : w === 'bold' ? 'B' : 'XB'}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Position */}
+                  <div className="flex gap-2">
+                    <div className="flex-1">
+                      <label className="text-[10px] text-slate-500 block mb-0.5">Yatay: {overlay.x}%</label>
+                      <input
+                        type="range" min="5" max="95" value={overlay.x}
+                        onChange={e => updateOverlay(overlay.id, { x: Number(e.target.value) })}
+                        className="w-full accent-lumina-gold h-1"
+                      />
+                    </div>
+                    <div className="flex-1">
+                      <label className="text-[10px] text-slate-500 block mb-0.5">Dikey: {overlay.y}%</label>
+                      <input
+                        type="range" min="5" max="95" value={overlay.y}
+                        onChange={e => updateOverlay(overlay.id, { y: Number(e.target.value) })}
+                        className="w-full accent-lumina-gold h-1"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Colors */}
+                  <div className="flex gap-2 items-end">
+                    <div>
+                      <label className="text-[10px] text-slate-500 block mb-0.5">Yazi Rengi</label>
+                      <div className="flex gap-1">
+                        <input
+                          type="color" value={overlay.color}
+                          onChange={e => updateOverlay(overlay.id, { color: e.target.value })}
+                          className="w-6 h-6 rounded border border-lumina-800 cursor-pointer"
+                        />
+                        {brand.palette.slice(0, 4).map(c => (
+                          <button
+                            key={c.hex}
+                            onClick={() => updateOverlay(overlay.id, { color: c.hex })}
+                            className="w-6 h-6 rounded border border-lumina-800 hover:border-lumina-gold/50"
+                            style={{ backgroundColor: c.hex }}
+                            title={c.name}
+                          />
+                        ))}
+                        <button
+                          onClick={() => updateOverlay(overlay.id, { color: '#FFFFFF' })}
+                          className="w-6 h-6 rounded border border-lumina-800 bg-white hover:border-lumina-gold/50"
+                          title="Beyaz"
+                        />
+                      </div>
+                    </div>
+                    <div>
+                      <label className="text-[10px] text-slate-500 block mb-0.5">Arka Plan</label>
+                      <div className="flex gap-1 items-center">
+                        <input
+                          type="color" value={overlay.bgColor || '#000000'}
+                          onChange={e => updateOverlay(overlay.id, { bgColor: e.target.value, bgOpacity: overlay.bgOpacity || 0.5 })}
+                          className="w-6 h-6 rounded border border-lumina-800 cursor-pointer"
+                        />
+                        <button
+                          onClick={() => updateOverlay(overlay.id, { bgColor: undefined, bgOpacity: undefined })}
+                          className="text-[10px] px-1.5 py-0.5 rounded text-slate-500 hover:text-white bg-lumina-800"
+                        >
+                          Yok
+                        </button>
+                      </div>
+                    </div>
+                    <div className="flex gap-1">
+                      {(['left', 'center', 'right'] as const).map(a => (
+                        <button
+                          key={a}
+                          onClick={() => updateOverlay(overlay.id, { textAlign: a })}
+                          className={`text-[10px] px-1.5 py-0.5 rounded ${
+                            overlay.textAlign === a ? 'bg-lumina-gold/20 text-lumina-gold' : 'text-slate-500 bg-lumina-800'
+                          }`}
+                        >
+                          {a === 'left' ? 'Sol' : a === 'center' ? 'Orta' : 'Sag'}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+};
 import { CarouselOrchestrator, CarouselEvent, loadCarouselProjects, deleteCarouselProject, loadBrandReferences } from '../services/carouselService';
 import { downloadBase64Image, downloadMultipleImages } from '../services/downloadService';
 
 interface CarouselGeneratorProps {
   brands: Brand[];
   addToHistory: (asset: GeneratedAsset) => void;
+}
+
+// Canvas helper: word-wrap text
+function wrapText(ctx: CanvasRenderingContext2D, text: string, x: number, y: number, maxWidth: number, lineHeight: number) {
+  const words = text.split(' ');
+  let line = '';
+  const lines: string[] = [];
+
+  for (const word of words) {
+    const testLine = line + (line ? ' ' : '') + word;
+    if (ctx.measureText(testLine).width > maxWidth && line) {
+      lines.push(line);
+      line = word;
+    } else {
+      line = testLine;
+    }
+  }
+  lines.push(line);
+
+  const totalHeight = lines.length * lineHeight;
+  const startY = y - totalHeight / 2 + lineHeight / 2;
+
+  for (let i = 0; i < lines.length; i++) {
+    ctx.fillText(lines[i], x, startY + i * lineHeight, maxWidth);
+  }
 }
 
 const ASPECT_RATIOS = [
@@ -132,6 +403,93 @@ const CarouselGenerator: React.FC<CarouselGeneratorProps> = ({ brands, addToHist
       name: `Hafıza: ${ref.tags?.[0] || 'Referans'}`,
     };
     setReferenceImages(prev => [...prev, newImg]);
+  };
+
+  // ── Update slide text overlays ──
+  const handleUpdateSlideOverlays = (slideOrder: number, overlays: SlideTextOverlay[]) => {
+    if (!project) return;
+    const updatedSlides = project.slides.map(s =>
+      s.order === slideOrder ? { ...s, textOverlays: overlays } : s
+    );
+    setProject({ ...project, slides: updatedSlides });
+  };
+
+  // ── Export slide with text overlay composited via canvas ──
+  const handleExportSlide = async (slideId: string) => {
+    if (!project) return;
+    const slide = project.slides.find(s => s.id === slideId);
+    if (!slide?.imageBase64) return;
+
+    const img = new Image();
+    img.onload = () => {
+      const canvas = document.createElement('canvas');
+      canvas.width = img.width;
+      canvas.height = img.height;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) return;
+
+      // Draw background image
+      ctx.drawImage(img, 0, 0);
+
+      // Draw text overlays
+      const overlays = slide.textOverlays || [];
+      for (const overlay of overlays) {
+        const x = (overlay.x / 100) * canvas.width;
+        const y = (overlay.y / 100) * canvas.height;
+        const scaledFontSize = (overlay.fontSize / 500) * canvas.width; // Scale font to image size
+        const maxW = (overlay.maxWidth / 100) * canvas.width;
+
+        ctx.textAlign = overlay.textAlign;
+        ctx.textBaseline = 'middle';
+        ctx.font = `${overlay.fontWeight === 'extrabold' ? '800' : overlay.fontWeight === 'bold' ? '700' : '400'} ${scaledFontSize}px "Inter", "Segoe UI", Arial, sans-serif`;
+
+        // Background pill
+        if (overlay.bgColor && overlay.bgOpacity) {
+          const metrics = ctx.measureText(overlay.text);
+          const textW = Math.min(metrics.width, maxW);
+          const pad = scaledFontSize * 0.4;
+          const bgX = overlay.textAlign === 'center' ? x - textW / 2 - pad :
+                      overlay.textAlign === 'right' ? x - textW - pad : x - pad;
+
+          ctx.fillStyle = overlay.bgColor;
+          ctx.globalAlpha = overlay.bgOpacity;
+          ctx.beginPath();
+          ctx.roundRect(bgX, y - scaledFontSize / 2 - pad / 2, textW + pad * 2, scaledFontSize + pad, scaledFontSize * 0.2);
+          ctx.fill();
+          ctx.globalAlpha = 1;
+        }
+
+        // Text shadow
+        if (!overlay.bgColor) {
+          ctx.shadowColor = 'rgba(0,0,0,0.8)';
+          ctx.shadowBlur = scaledFontSize * 0.3;
+          ctx.shadowOffsetX = 0;
+          ctx.shadowOffsetY = scaledFontSize * 0.05;
+        }
+
+        // Draw text with word wrap
+        ctx.fillStyle = overlay.color;
+        wrapText(ctx, overlay.text, x, y, maxW, scaledFontSize * 1.3);
+
+        // Reset shadow
+        ctx.shadowColor = 'transparent';
+        ctx.shadowBlur = 0;
+      }
+
+      const dataUrl = canvas.toDataURL('image/png');
+      const base64 = dataUrl.split(',')[1];
+      downloadBase64Image(base64, `${selectedBrand?.name || 'carousel'}_slide_${slide.order + 1}.png`);
+    };
+    img.src = `data:image/png;base64,${slide.imageBase64}`;
+  };
+
+  // ── Export ALL slides with overlays ──
+  const handleExportAllWithOverlays = async () => {
+    if (!project) return;
+    for (const slide of project.slides.filter(s => s.status === 'completed' && s.imageBase64)) {
+      await handleExportSlide(slide.id);
+      await new Promise(r => setTimeout(r, 300)); // Small delay between downloads
+    }
   };
 
   // ── Start Generation ──
@@ -748,7 +1106,7 @@ const CarouselGenerator: React.FC<CarouselGeneratorProps> = ({ brands, addToHist
                     <ChevronRight size={16} />
                   </button>
                   <button
-                    onClick={handleDownloadAll}
+                    onClick={handleExportAllWithOverlays}
                     className="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-lumina-gold/20 text-lumina-gold text-xs hover:bg-lumina-gold/30 transition-all"
                   >
                     <Download size={14} />
@@ -757,21 +1115,14 @@ const CarouselGenerator: React.FC<CarouselGeneratorProps> = ({ brands, addToHist
                 </div>
               </div>
 
-              {/* Main Preview Image */}
-              {completedSlides[currentSlidePreview]?.imageBase64 && (
-                <div className="relative rounded-xl overflow-hidden border border-lumina-800 mb-4">
-                  <img
-                    src={`data:image/png;base64,${completedSlides[currentSlidePreview].imageBase64}`}
-                    className="w-full"
-                    alt={`Slide ${currentSlidePreview + 1}`}
-                  />
-                  <button
-                    onClick={() => downloadBase64Image(completedSlides[currentSlidePreview].imageBase64!, `${selectedBrand?.name}_carousel_slide_${currentSlidePreview + 1}.png`)}
-                    className="absolute bottom-3 right-3 p-2 rounded-lg bg-black/60 text-white hover:bg-black/80 transition-all"
-                  >
-                    <Download size={16} />
-                  </button>
-                </div>
+              {/* Main Preview with Text Overlay Editor */}
+              {completedSlides[currentSlidePreview]?.imageBase64 && selectedBrand && (
+                <TextOverlayEditor
+                  slide={completedSlides[currentSlidePreview]}
+                  brand={selectedBrand}
+                  onUpdate={(overlays) => handleUpdateSlideOverlays(completedSlides[currentSlidePreview].order, overlays)}
+                  onExport={handleExportSlide}
+                />
               )}
 
               {/* Thumbnail Strip */}

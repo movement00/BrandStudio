@@ -190,11 +190,26 @@ export type ViewState = 'dashboard' | 'brands' | 'analyzer' | 'library' | 'bulk'
 
 export type CarouselSlideStatus = 'pending' | 'generating' | 'completed' | 'failed';
 
+export interface SlideTextOverlay {
+  id: string;
+  text: string;
+  x: number;                        // % from left (0-100)
+  y: number;                        // % from top (0-100)
+  fontSize: number;                 // px
+  fontWeight: 'normal' | 'bold' | 'extrabold';
+  color: string;                    // hex
+  bgColor?: string;                 // optional background hex
+  bgOpacity?: number;               // 0-1
+  textAlign: 'left' | 'center' | 'right';
+  maxWidth: number;                 // % of slide width
+}
+
 export interface CarouselSlide {
   id: string;
   order: number;                    // 0-based slide order
   topic: string;                    // Slide-specific topic/content
-  imageBase64?: string;             // Generated image
+  imageBase64?: string;             // Generated background image
+  textOverlays?: SlideTextOverlay[];// User-editable text layers
   status: CarouselSlideStatus;
   error?: string;
 }
@@ -209,8 +224,13 @@ export interface CarouselProject {
   slides: CarouselSlide[];
   referenceImages: PipelineImage[]; // Style reference images
   productImages: PipelineImage[];   // Optional product images
-  styleAnalysis?: StyleAnalysis;    // Shared style DNA for consistency
-  blueprint?: DesignBlueprint;      // Shared blueprint for layout consistency
+  styleAnalysis?: StyleAnalysis;    // Primary style DNA (from first ref)
+  blueprint?: DesignBlueprint;      // Primary blueprint (from first ref)
+  perRefAnalysis?: {                // Per-reference image analysis
+    refId: string;
+    styleAnalysis: StyleAnalysis;
+    blueprint: DesignBlueprint;
+  }[];
   carouselPlan?: CarouselContentPlan; // AI-generated content plan
   status: 'draft' | 'planning' | 'generating' | 'completed' | 'failed';
   creativeTone?: string;
