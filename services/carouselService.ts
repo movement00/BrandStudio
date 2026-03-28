@@ -248,12 +248,16 @@ export class CarouselOrchestrator {
     onProjectUpdate(updatedProject);
 
     try {
-      // ── Step 1 & 2: Analyze EACH reference image separately ──
-      if (!project.referenceImages.length) throw new Error('En az 1 referans görsel gerekli.');
+      const hasReferences = project.referenceImages.length > 0;
+
+      // ── Step 1 & 2: Analyze reference images (if any) ──
+      if (!hasReferences) {
+        this.emit({ type: 'log', message: 'Referans görsel yok — marka kitinden tasarım yapılacak.' });
+      }
 
       let perRefAnalysis = project.perRefAnalysis || [];
 
-      if (perRefAnalysis.length < project.referenceImages.length) {
+      if (hasReferences && perRefAnalysis.length < project.referenceImages.length) {
         this.emit({ type: 'status', message: `${project.referenceImages.length} referans görsel analiz ediliyor...` });
 
         for (let r = 0; r < project.referenceImages.length; r++) {
@@ -282,10 +286,10 @@ export class CarouselOrchestrator {
         }
       }
 
-      // Primary style & blueprint (from first ref) — used for carousel plan
-      const styleAnalysis = perRefAnalysis[0].styleAnalysis;
-      const blueprint = perRefAnalysis[0].blueprint;
-      updatedProject = { ...updatedProject, styleAnalysis, blueprint, perRefAnalysis };
+      // Primary style & blueprint (from first ref if available)
+      const styleAnalysis = perRefAnalysis.length > 0 ? perRefAnalysis[0].styleAnalysis : null;
+      const blueprint = perRefAnalysis.length > 0 ? perRefAnalysis[0].blueprint : null;
+      updatedProject = { ...updatedProject, styleAnalysis: styleAnalysis || undefined, blueprint: blueprint || undefined, perRefAnalysis };
       onProjectUpdate(updatedProject);
 
       if (this.aborted) throw new Error('İptal edildi.');
@@ -322,7 +326,7 @@ export class CarouselOrchestrator {
       this.emit({ type: 'status', message: 'Slide\'lar üretiliyor...' });
 
       const slides: CarouselSlide[] = [];
-      let previousSlideBase64: string | null = null;
+      let masterSlideBase64: string | null = null; // First slide = master template for all others
 
       for (let i = 0; i < carouselPlan.slideContents.length; i++) {
         if (this.aborted) throw new Error('İptal edildi.');
@@ -334,7 +338,7 @@ export class CarouselOrchestrator {
         const existingSlide = updatedProject.slides.find(s => s.order === i && s.status === 'completed' && s.imageBase64);
         if (existingSlide) {
           slides.push(existingSlide);
-          previousSlideBase64 = existingSlide.imageBase64!;
+          if (i === 0) masterSlideBase64 = existingSlide.imageBase64!;
           this.emit({ type: 'slide-update', message: `Slide ${i + 1} zaten mevcut, atlanıyor.`, slideIndex: i });
           continue;
         }
@@ -370,17 +374,18 @@ export class CarouselOrchestrator {
             carouselPlan,
             slideStyle,
             slideBlueprint,
-            refBase64,
+            i === 0 ? refBase64 : null,       // Reference only for first slide
             productBase64,
             project.aspectRatio,
             i,
             carouselPlan.slideContents.length,
-            previousSlideBase64
+            i === 0 ? null : masterSlideBase64, // Master slide as template for subsequent
+            project.carouselType || 'custom'
           );
 
           slide.imageBase64 = imageBase64;
           slide.status = 'completed';
-          previousSlideBase64 = imageBase64;
+          if (i === 0) masterSlideBase64 = imageBase64; // Store first as master
 
           // Create default text overlays using typography system
           const typeScale = TYPE_SCALES[project.aspectRatio] || TYPE_SCALES['1:1'];

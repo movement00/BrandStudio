@@ -214,15 +214,30 @@ export interface CarouselSlide {
   error?: string;
 }
 
+export type CarouselType =
+  | 'campaign'          // Kampanya / İndirim / Teklif
+  | 'product-launch'    // Ürün Lansmanı / Tanıtım
+  | 'educational'       // Eğitici / Bilgilendirici / Nasıl Yapılır
+  | 'announcement'      // Duyuru / Haber
+  | 'congratulations'   // Tebrik / Kutlama / Bayram
+  | 'brand-story'       // Marka Hikayesi / Hakkımızda
+  | 'tips-tricks'       // İpuçları / Listeler
+  | 'before-after'      // Önce-Sonra / Karşılaştırma
+  | 'testimonial'       // Müşteri Yorumları / Sosyal Kanıt
+  | 'event'             // Etkinlik / Davet
+  | 'motivation'        // Motivasyon / İlham
+  | 'custom';           // Serbest
+
 export interface CarouselProject {
   id: string;
   brandId: string;
   title: string;                    // Carousel title/theme
   description?: string;             // Overall carousel description
+  carouselType: CarouselType;       // Type of carousel
   aspectRatio: string;              // 1:1, 4:5, 9:16
   slideCount: number;
   slides: CarouselSlide[];
-  referenceImages: PipelineImage[]; // Style reference images
+  referenceImages: PipelineImage[]; // Style reference images (optional now)
   productImages: PipelineImage[];   // Optional product images
   styleAnalysis?: StyleAnalysis;    // Primary style DNA (from first ref)
   blueprint?: DesignBlueprint;      // Primary blueprint (from first ref)

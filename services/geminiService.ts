@@ -1737,7 +1737,93 @@ export const generateDesignDirectives = async (
 // 9. CAROUSEL — AI-powered carousel planning & consistent generation
 // ══════════════════════════════════════════════════════════════
 
-import { CarouselContentPlan } from '../types';
+import { CarouselContentPlan, CarouselType } from '../types';
+
+// ── Carousel Type Design Intelligence ──
+const CAROUSEL_TYPE_DIRECTIVES: Record<CarouselType, string> = {
+  'campaign': `KAMPANYA / İNDİRİM GÖRSELİ:
+    - Enerji ve aciliyet hissi veren dinamik kompozisyon
+    - Patlayan renkler, radyal gradyanlar, ışık efektleri
+    - İndirim yüzdeleri için büyük negatif alan bırak (metin kullanıcı ekleyecek)
+    - Konfeti, yıldız, patlama efektleri uygun slide'larda
+    - Ürün fotoğrafı varsa vitrin alanı ayır`,
+
+  'product-launch': `ÜRÜN LANSMANI / TANITIM:
+    - Premium, clean, minimalist arka plan
+    - Ürün spot ışığı altında — dramatik aydınlatma
+    - Gradyan zemin: markanın dominant renginden koyu tonuna
+    - Derinlik efekti: blur, gölge, 3D hissi
+    - Her slide'da ürünün farklı açısı/özelliği için alan`,
+
+  'educational': `EĞİTİCİ / BİLGİLENDİRİCİ:
+    - Temiz, organize, grid bazlı layout
+    - İkon ve infografik alanları
+    - Numaralı adımlar için net bölümler
+    - Açık/pastel arka plan, okunabilirlik öncelikli
+    - Ok ve bağlantı çizgileri ile akış hissi`,
+
+  'announcement': `DUYURU / HABER:
+    - Dikkat çekici, cesur renk kullanımı
+    - Merkezi odak noktası — büyük negatif alan
+    - Kurumsal ve güvenilir his
+    - Dalga, çizgi gibi dinamik şekiller
+    - Alt slide'larda detay için kartlar/bölümler`,
+
+  'congratulations': `TEBRİK / KUTLAMA / BAYRAM:
+    - Şenlikli, neşeli atmosfer
+    - Altın/gümüş aksan detayları, parıltı efektleri
+    - Konfeti, balon, yıldız gibi kutlama elementleri
+    - Sıcak ve samimi renk tonları
+    - Zarif çerçeveler ve süsleme motifleri`,
+
+  'brand-story': `MARKA HİKAYESİ / HAKKIMIZDA:
+    - Sinematik, geniş açı hissi
+    - Film strip / timeline görsel dili
+    - Duygusal renk geçişleri (sıcaktan soğuğa veya tersi)
+    - Her slide farklı bir "sahne" — ama aynı film estetiği
+    - Derinlik ve perspektif kullan`,
+
+  'tips-tricks': `İPUÇLARI / LİSTELER:
+    - Temiz kartlar ve bölümler
+    - Her slide bir numara/tip için ayrılmış alan
+    - İkon placeholder alanları (yuvarlak veya kare iç çerçeveler)
+    - Tutarlı grid: her slide aynı layout yapısında
+    - Geçiş elementleri (ok, çizgi, nokta) slide'lar arası`,
+
+  'before-after': `ÖNCE-SONRA / KARŞILAŞTIRMA:
+    - Bölünmüş ekran kompozisyonu (dikey veya çapraz)
+    - Kontrast renk alanları (kırmızı/yeşil, koyu/açık)
+    - Karşılaştırma çizgisi veya geçiş efekti
+    - Her slide bir kriter/özellik karşılaştırması için
+    - Net ayrım çizgileri ve ikonlar için alan`,
+
+  'testimonial': `MÜŞTERİ YORUMLARI / SOSYAL KANIT:
+    - Sıcak, güvenilir tonlarda arka plan
+    - Tırnak işareti / quote grafik elementi
+    - Yuvarlak profil fotoğrafı için placeholder
+    - Yıldız rating için alan
+    - Zarif, soft gradyanlar, kağıt/doku hissi`,
+
+  'event': `ETKİNLİK / DAVİYE:
+    - Elegance ve heyecan dengesi
+    - Tarih/saat bilgisi için belirgin alan
+    - Harita/lokasyon ikonu alanı
+    - Premium kart hissi — çerçeve ve bordür
+    - Spotlight/sahne ışığı efekti`,
+
+  'motivation': `MOTİVASYON / İLHAM:
+    - Güçlü, dramatik ışıklandırma
+    - Doğa, gökyüzü, dağ gibi güçlü görsel metaforlar
+    - Geniş negatif alan (büyük metin için)
+    - Gradient overlay ile derinlik
+    - Cesur, bold renk kullanımı`,
+
+  'custom': `SERBEST TASARIM:
+    - Markanın renk paletine sadık kal
+    - Profesyonel, yüksek kaliteli arka plan
+    - Metin için geniş negatif alan bırak
+    - Tutarlı görsel dil tüm slide'larda`,
+};
 
 /**
  * Plans the full carousel: narrative arc, slide contents, visual consistency rules.
@@ -1746,8 +1832,8 @@ export const planCarouselContent = async (
   brand: Brand,
   topic: string,
   slideCount: number,
-  styleAnalysis: StyleAnalysis,
-  blueprint: DesignBlueprint,
+  styleAnalysis: StyleAnalysis | null,
+  blueprint: DesignBlueprint | null,
   creativeTone?: string,
   pastCarouselThemes?: string[]
 ): Promise<CarouselContentPlan> => {
@@ -1862,14 +1948,15 @@ export const generateCarouselSlide = async (
   brand: Brand,
   slideContent: CarouselContentPlan['slideContents'][0],
   carouselPlan: CarouselContentPlan,
-  styleAnalysis: StyleAnalysis,
-  blueprint: DesignBlueprint,
+  styleAnalysis: StyleAnalysis | null,
+  blueprint: DesignBlueprint | null,
   referenceImageBase64: string | null,
   productImageBase64: string | null,
   aspectRatio: string,
   slideIndex: number,
   totalSlides: number,
-  previousSlideBase64?: string | null
+  previousSlideBase64?: string | null,
+  carouselType: CarouselType = 'custom'
 ): Promise<string> => {
   const ai = getAI();
 
@@ -1877,113 +1964,158 @@ export const generateCarouselSlide = async (
     ? { dominant: brand.palette[0].hex, secondary: brand.palette[1].hex, accent: brand.palette[2].hex }
     : { dominant: brand.primaryColor, secondary: brand.secondaryColor, accent: brand.primaryColor };
 
-  const prompt = `
-    GÖREV: Bir carousel serisinin ${slideIndex + 1}/${totalSlides} numaralı slide'ı için ARKA PLAN GÖRSELİ üret.
+  const hasReference = !!styleAnalysis && !!blueprint;
+  const typeDirective = CAROUSEL_TYPE_DIRECTIVES[carouselType] || CAROUSEL_TYPE_DIRECTIVES['custom'];
+  const isFirstSlide = slideIndex === 0;
+  const isLastSlide = slideIndex === totalSlides - 1;
 
-    ██████████████████████████████████████████████████████████████████
-    ██  KRİTİK: BU GÖRSEL SADECE ARKA PLAN — METİN YAZMA!         ██
-    ██  Görsel üzerine HİÇBİR metin, yazı, harf, rakam,           ██
-    ██  kelime, cümle, logo metni YAZMA. Saf görsel arka plan.     ██
-    ██  Metinleri kullanıcı kendisi ekleyecek.                     ██
-    ██████████████████████████████████████████████████████████████████
+  // ── First slide: generate the MASTER template ──
+  // ── Subsequent slides: CLONE the master, only change specific content ──
 
-    Bu slide BAĞIMSIZ değil — bir serinin PARÇASI. Tüm slide'lar aynı görsel DNA'yı paylaşmalı.
+  const prompt = isFirstSlide ? `
+    Sen dünyanın en iyi reklam ajanslarında çalışmış senior bir sanat yönetmenisin.
+    GÖREV: ${totalSlides} slide'lık bir Instagram carousel serisinin İLK SLIDE'ını (MASTER ŞABLON) tasarla.
+
+    Bu slide, serinin tüm görsel dilini belirleyecek. Sonraki tüm slide'lar bunun BİREBİR KOPYASI olacak.
 
     ═══════════════════════════════════════════════════════════
-    MARKA KİMLİĞİ
+    MARKA
     ═══════════════════════════════════════════════════════════
     İsim: ${brand.name}
     Sektör: ${brand.industry}
     ${brand.description ? `Açıklama: ${brand.description}` : ''}
     Ton: ${brand.tone}
+    ${brand.instagram ? `Instagram: @${brand.instagram}` : ''}
 
     ═══════════════════════════════════════════════════════════
-    CAROUSEL SERİSİ BİLGİSİ
+    CAROUSEL TİPİ
+    ═══════════════════════════════════════════════════════════
+    ${typeDirective}
+
+    ═══════════════════════════════════════════════════════════
+    İÇERİK (bu slide'ın metinleri)
     ═══════════════════════════════════════════════════════════
     Tema: ${carouselPlan.theme}
-    Toplam Slide: ${totalSlides}
-    Bu Slide: ${slideIndex + 1}/${totalSlides}
-    Narrative Rolü: ${slideContent.narrativeRole}
-
-    ═══════════════════════════════════════════════════════════
-    TUTARLILIK KURALLARI (TÜM SLIDE'LAR İÇİN AYNI)
-    ═══════════════════════════════════════════════════════════
-    RENK AKIŞI: ${carouselPlan.colorFlow}
-    GÖRSEL İPUCU: ${carouselPlan.visualThread}
-
-    BU DEĞİŞMEZ:
-    - Arka plan stili/rengi/deseni TÜM slide'larda AYNI
-    - Dekoratif elementler (gradient, şekiller, dokular) TÜM slide'larda TEKRARLANMALI
-    - Renk paleti DEĞİŞMEZ
-    - Padding/margin oranları DEĞİŞMEZ
-
-    ═══════════════════════════════════════════════════════════
-    BU SLIDE'IN GÖRSEL İÇERİĞİ (metin DEĞİL, görsel yön)
-    ═══════════════════════════════════════════════════════════
-    Konu: "${slideContent.headline} — ${slideContent.bodyText}"
+    Başlık: "${slideContent.headline}"
+    Açıklama: "${slideContent.bodyText}"
+    ${slideContent.ctaText ? `CTA: "${slideContent.ctaText}"` : ''}
     Görsel Yön: ${slideContent.visualDirection}
-    Anlatım Rolü: ${slideContent.narrativeRole}
+
+    ${hasReference ? `
+    REFERANS STİL DNA:
+    Kompozisyon: ${styleAnalysis!.composition}
+    Mood: ${styleAnalysis!.mood}
+    Artistik Stil: ${styleAnalysis!.artisticStyle}
+    Arka Plan: ${styleAnalysis!.backgroundDetails}
+    Layout: ${blueprint!.canvas.style}, ${blueprint!.layout.type}
+    ` : `
+    MARKA KİTİNDEN TASARLA (referans yok):
+    - Dominant renk: ${brandColors.dominant}
+    - İkincil renk: ${brandColors.secondary}
+    - Vurgu rengi: ${brandColors.accent}
+    - ${brand.industry} sektörüne özgü profesyonel tasarım
+    - Modern gradyanlar, geometrik şekiller, yüksek kalite
+    `}
 
     ═══════════════════════════════════════════════════════════
-    STİL DNA (referans görselden çıkarılmıştır)
-    ═══════════════════════════════════════════════════════════
-    Kompozisyon: ${styleAnalysis.composition}
-    Işık: ${styleAnalysis.lighting}
-    Renk Atmosferi: ${styleAnalysis.colorPaletteDescription}
-    Mood: ${styleAnalysis.mood}
-    Doku: ${styleAnalysis.textureDetails}
-    Artistik Stil: ${styleAnalysis.artisticStyle}
-    Arka Plan: ${styleAnalysis.backgroundDetails}
-
-    BLUEPRINT LAYOUT:
-    - Canvas: ${blueprint.canvas.style}, Mood: ${blueprint.canvas.mood}
-    - Layout: ${blueprint.layout.type}, Alignment: ${blueprint.layout.alignment}
-    - Renk Dağılımı: Dominant ${brandColors.dominant} (%60), İkincil ${brandColors.secondary} (%30), Vurgu ${brandColors.accent} (%10)
-
-    ═══════════════════════════════════════════════════════════
-    RENK PALETİ (SADECE BUNLARI KULLAN)
+    RENK PALETİ (YALNIZCA BUNLAR)
     ═══════════════════════════════════════════════════════════
     ${brand.palette.map(c => `- ${c.name}: ${c.hex}`).join('\n    ')}
 
     ═══════════════════════════════════════════════════════════
-    SLIDE-SPESİFİK KURALLAR
+    MASTER ŞABLON TASARIM KURALLARI
     ═══════════════════════════════════════════════════════════
-    ${slideIndex === 0 ? `
-    BU İLK SLIDE (HOOK):
-    - En dikkat çekici slide olmalı
-    - Kaydırmaya teşvik eden güçlü görsel
-    - Başlık en büyük ve en bold
-    ` : slideIndex === totalSlides - 1 ? `
-    BU SON SLIDE (CTA):
-    - Aksiyon çağrısı içermeli
-    - ${brand.instagram ? `@${brand.instagram} hesap bilgisi` : ''}
-    - ${brand.phone ? `İletişim: ${brand.phone}` : ''}
+    Bu ilk slide, serinin DNA'sını oluşturacak. Şunları MUTLAKA içermeli:
+
+    1. SABIT LAYOUT YAPISI:
+       - Sol üst: ${brand.logo ? 'Logo alanı' : `"${brand.name}" marka adı`} (küçük, zarif)
+       - Sağ üst: Etiket alanı (küçük rounded badge, marka vurgu renginde)
+       - Orta bölge: Ana içerik alanı (başlık + açıklama için)
+       - Alt bölge: Web sitesi/instagram ve "kaydır →" alanı
+       Bu layout TÜM slide'larda BİREBİR AYNI kalacak.
+
+    2. TUTARLILIK ELEMENTLERİ:
+       - Arka plan: Tek tip doku/renk/gradient (tüm slide'larda aynı)
+       - Dekoratif elementler: Geometrik şekiller, çizgiler, dot pattern vb. (hep aynı)
+       - İkon/illüstrasyon alanı: Orta bölgede, her slide'da farklı ikon olacak alan
+       - Alt sağ köşe: Kaydır oku (→) — HER slide'da AYNI stil, AYNI konum, AYNI boyut
+
+    3. TİPOGRAFİ:
+       - Metinler NET ve OKUNABIILIR olmalı
+       - Başlık: Büyük, bold, marka renginde veya siyah
+       - Açıklama: Daha küçük, regular weight
+       - DİL: ${brand.outputLanguage === 'en' ? 'İNGİLİZCE' : 'TÜRKÇE'}
+
+    FORMAT: ${aspectRatio}
+    KALİTE: 4K, profesyonel, yüksek çözünürlük.
+  `
+
+  // ── Subsequent slides: CLONE the master ──
+  : `
+    GÖREV: Verilen MASTER SLIDE görselini BİREBİR KOPYALA, sadece İÇERİĞİ değiştir.
+
+    ██████████████████████████████████████████████████████████████████
+    ██  BU YENİ BİR TASARIM DEĞİL — MASTER'IN KOPYASI!            ██
+    ██  Arka plan, layout, renkler, fontlar, dekorasyon, çerçeve,  ██
+    ██  logo konumu, etiket konumu, ok stili — HEPSİ AYNI KALMALI. ██
+    ██  SADECE metin içeriği ve varsa ikon/illüstrasyon değişmeli.  ██
+    ██████████████████████████████████████████████████████████████████
+
+    MASTER SLIDE verildi. Bunu incele ve AYNI görseli üret, sadece şu değişikliklerle:
+
+    DEĞİŞECEK ŞEYLER:
+    ┌─────────────────────────────────────────────┐
+    │ ✓ Başlık metni → "${slideContent.headline}" │
+    │ ✓ Açıklama metni → "${slideContent.bodyText}" │
+    ${slideContent.ctaText ? `│ ✓ CTA metni → "${slideContent.ctaText}"      │\n` : ''}│ ✓ İkon/illüstrasyon (konuya uygun)           │
+    └─────────────────────────────────────────────┘
+
+    DEĞİŞMEYECEK ŞEYLER (BİREBİR AYNI KALMALI):
+    ┌─────────────────────────────────────────────┐
+    │ ✗ Arka plan rengi/deseni/gradyanı           │
+    │ ✗ Logo konumu ve stili                      │
+    │ ✗ Sağ üst etiket (aynı metin, aynı stil)   │
+    │ ✗ Font ailesi, boyutu, ağırlığı             │
+    │ ✗ Alt bölgedeki web/instagram bilgisi        │
+    │ ✗ "Kaydır →" oku (aynı konum, aynı renk)   │
+    │ ✗ Çerçeve, bordür, dekoratif elementler     │
+    │ ✗ Padding, margin, boşluklar                │
+    │ ✗ Genel layout grid yapısı                  │
+    └─────────────────────────────────────────────┘
+
+    ${isLastSlide ? `
+    SON SLIDE FARKI:
+    - "Kaydır →" oku KALDIR — bu son slide
+    - Yerine CTA butonu veya iletişim bilgisi koy
+    - ${brand.instagram ? `@${brand.instagram}` : ''}
+    - ${brand.phone ? `Telefon: ${brand.phone}` : ''}
     - ${brand.website ? `Web: ${brand.website}` : ''}
     ` : `
-    BU ORTA SLIDE (İÇERİK):
-    - Bilgi veya değer sunmalı
-    - Önceki slide'dan mantıksal devam
+    ORTA SLIDE (${slideIndex + 1}/${totalSlides}):
+    - Seri akışında ${slideIndex + 1}. slide
+    - Görsel Yön: ${slideContent.visualDirection}
+    - Narrative Rolü: ${slideContent.narrativeRole}
     `}
 
+    MARKA: ${brand.name} (${brand.industry})
     DİL: ${brand.outputLanguage === 'en' ? 'İNGİLİZCE' : 'TÜRKÇE'}
     FORMAT: ${aspectRatio}
-    KALİTE: 4K, profesyonel reklam ajansı kalitesinde.
+    KALİTE: 4K, profesyonel.
 
-    SON HATIRLATMA: Bu görsel SADE ARKA PLAN. Üzerine HİÇBİR metin, yazı, harf, sayı, logo yazısı KOYMA.
-    Sadece görsel elementler: renkler, gradyanlar, şekiller, fotoğraflar, dokular, ikonlar (opsiyonel).
-
-    ${previousSlideBase64 ? 'ÖNCEKİ SLIDE GÖRSELİ VERİLDİ — bununla AYNI görsel stili, arka plan kullan. TUTARLILIK KRİTİK!' : ''}
+    TEKRAR: Bu YENİ bir tasarım DEĞİL. MASTER slide ile PİKSEL PİKSEL AYNI, sadece metin ve ikon değişiyor.
   `;
 
   const parts: any[] = [];
 
-  if (previousSlideBase64) {
-    parts.push({ text: "ÖNCEKİ SLIDE (bununla AYNI stil, arka plan, font kullan — sadece içerik değişmeli):" });
+  if (!isFirstSlide && previousSlideBase64) {
+    // For all slides after the first: send the MASTER (first slide) as the template to clone
+    parts.push({ text: "MASTER SLIDE — bunu BİREBİR KOPYALA, sadece metin içeriğini ve ikonu değiştir. Layout, renkler, dekorasyon, logo konumu, ok stili HEPSİ AYNI:" });
     parts.push({ inlineData: { mimeType: 'image/png', data: previousSlideBase64 } });
   }
 
-  if (referenceImageBase64) {
-    parts.push({ text: "STİL REFERANSI (layout ve yapı kaynağı):" });
+  if (isFirstSlide && referenceImageBase64) {
+    // First slide only: use style reference
+    parts.push({ text: "STİL REFERANSI (bu görselin yapısını ve stilini baz al):" });
     parts.push({ inlineData: { mimeType: 'image/png', data: referenceImageBase64 } });
   }
 
@@ -1993,7 +2125,7 @@ export const generateCarouselSlide = async (
   }
 
   if (brand.logo) {
-    parts.push({ text: "MARKA LOGOSU (her slide'da AYNI konumda):" });
+    parts.push({ text: "MARKA LOGOSU (her slide'da AYNI konumda, AYNI boyutta yerleştir):" });
     parts.push({ inlineData: { mimeType: 'image/png', data: brand.logo } });
   }
 

@@ -4,7 +4,7 @@ import {
   Loader2, Image as ImageIcon, Palette, CheckCircle2, XCircle, RotateCcw,
   Wand2, Plus, FolderOpen, Clock, AlertCircle, ImagePlus, GalleryHorizontalEnd
 } from 'lucide-react';
-import { Brand, CarouselProject, CarouselSlide, CarouselContentPlan, PipelineImage, GeneratedAsset, SlideTextOverlay } from '../types';
+import { Brand, CarouselProject, CarouselSlide, CarouselContentPlan, PipelineImage, GeneratedAsset, SlideTextOverlay, CarouselType } from '../types';
 import { fileToGenerativePart } from '../services/geminiService';
 import { generateCarouselTopics } from '../services/geminiService';
 import { FONT_PAIRINGS, FontPairing, getGoogleFontsUrl, SLIDE_LAYOUT_PRESETS, TYPE_SCALES } from '../services/typographySystem';
@@ -299,6 +299,21 @@ const ASPECT_RATIOS = [
 
 const SLIDE_COUNTS = [4, 5, 6, 7, 8, 10];
 
+const CAROUSEL_TYPES: { value: CarouselType; label: string; icon: string }[] = [
+  { value: 'educational', label: 'Eğitici / Bilgi', icon: '📚' },
+  { value: 'campaign', label: 'Kampanya', icon: '🔥' },
+  { value: 'product-launch', label: 'Ürün Tanıtım', icon: '🚀' },
+  { value: 'announcement', label: 'Duyuru', icon: '📢' },
+  { value: 'congratulations', label: 'Tebrik / Kutlama', icon: '🎉' },
+  { value: 'brand-story', label: 'Marka Hikayesi', icon: '📖' },
+  { value: 'tips-tricks', label: 'İpuçları', icon: '💡' },
+  { value: 'before-after', label: 'Önce-Sonra', icon: '🔄' },
+  { value: 'testimonial', label: 'Müşteri Yorumu', icon: '⭐' },
+  { value: 'event', label: 'Etkinlik / Davet', icon: '📅' },
+  { value: 'motivation', label: 'Motivasyon', icon: '💪' },
+  { value: 'custom', label: 'Serbest', icon: '✨' },
+];
+
 const CREATIVE_TONES = [
   { value: '', label: 'Varsayılan' },
   { value: 'kurumsal', label: 'Kurumsal' },
@@ -314,6 +329,7 @@ type CarouselMode = 'multi-ref' | 'single-image';
 const CarouselGenerator: React.FC<CarouselGeneratorProps> = ({ brands, addToHistory }) => {
   // ── State ──
   const [mode, setMode] = useState<CarouselMode>('single-image');
+  const [carouselType, setCarouselType] = useState<CarouselType>('educational');
   const [selectedBrandId, setSelectedBrandId] = useState(brands[0]?.id || '');
   const [topic, setTopic] = useState('');
   const [aspectRatio, setAspectRatio] = useState('1:1');
@@ -522,6 +538,7 @@ const CarouselGenerator: React.FC<CarouselGeneratorProps> = ({ brands, addToHist
       id: projectId,
       brandId: selectedBrandId,
       title: topic.trim(),
+      carouselType,
       aspectRatio,
       slideCount,
       slides: [],
@@ -596,6 +613,7 @@ const CarouselGenerator: React.FC<CarouselGeneratorProps> = ({ brands, addToHist
   const handleLoadPastProject = (p: CarouselProject) => {
     setProject(p);
     setTopic(p.title);
+    setCarouselType(p.carouselType || 'custom');
     setAspectRatio(p.aspectRatio);
     setSlideCount(p.slideCount);
     setCreativeTone(p.creativeTone || '');
@@ -624,7 +642,7 @@ const CarouselGenerator: React.FC<CarouselGeneratorProps> = ({ brands, addToHist
 
   // ── Computed ──
   const completedSlides = project?.slides.filter(s => s.status === 'completed') || [];
-  const canGenerate = selectedBrand && topic.trim() && referenceImages.length > 0 && !isGenerating;
+  const canGenerate = selectedBrand && topic.trim() && !isGenerating; // Referans artık opsiyonel
 
   return (
     <div className="p-4 lg:p-8 max-w-7xl mx-auto">
@@ -760,7 +778,7 @@ const CarouselGenerator: React.FC<CarouselGeneratorProps> = ({ brands, addToHist
           {/* Reference Images */}
           <div className="bg-lumina-900 border border-lumina-800 rounded-2xl p-4">
             <label className="text-xs text-slate-400 uppercase tracking-wider mb-2 block">
-              {mode === 'single-image' ? 'Kaynak Görsel' : 'Referans Görseller'} <span className="text-lumina-gold">*</span>
+              {mode === 'single-image' ? 'Kaynak Görsel' : 'Referans Görseller'} <span className="text-slate-600">(opsiyonel)</span>
             </label>
             <input
               ref={fileInputRef}
@@ -928,6 +946,28 @@ const CarouselGenerator: React.FC<CarouselGeneratorProps> = ({ brands, addToHist
                 ))}
               </div>
             )}
+          </div>
+
+          {/* Carousel Type */}
+          <div className="bg-lumina-900 border border-lumina-800 rounded-2xl p-4">
+            <label className="text-xs text-slate-400 uppercase tracking-wider mb-2 block">Carousel Tipi</label>
+            <div className="grid grid-cols-3 gap-1.5 max-h-36 overflow-y-auto pr-1">
+              {CAROUSEL_TYPES.map(ct => (
+                <button
+                  key={ct.value}
+                  onClick={() => setCarouselType(ct.value)}
+                  disabled={isGenerating}
+                  className={`text-center py-1.5 px-1 rounded-lg border text-[10px] transition-all ${
+                    carouselType === ct.value
+                      ? 'border-lumina-gold/50 bg-lumina-gold/10 text-lumina-gold'
+                      : 'border-lumina-800 text-slate-500 hover:border-lumina-gold/20 hover:text-slate-300'
+                  }`}
+                >
+                  <span className="block text-sm mb-0.5">{ct.icon}</span>
+                  {ct.label}
+                </button>
+              ))}
+            </div>
           </div>
 
           {/* Topic */}
