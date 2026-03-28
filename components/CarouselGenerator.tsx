@@ -325,11 +325,11 @@ const CREATIVE_TONES = [
   { value: 'genc', label: 'Genc/Dinamik' },
 ];
 
-type CarouselMode = 'multi-ref' | 'single-image';
+type CarouselMode = 'brand-kit' | 'single-image' | 'multi-ref';
 
 const CarouselGenerator: React.FC<CarouselGeneratorProps> = ({ brands, addToHistory }) => {
   // ── State ──
-  const [mode, setMode] = useState<CarouselMode>('single-image');
+  const [mode, setMode] = useState<CarouselMode>('brand-kit');
   const [carouselType, setCarouselType] = useState<CarouselType>('educational');
   const [selectedBrandId, setSelectedBrandId] = useState(brands[0]?.id || '');
   const [topic, setTopic] = useState('');
@@ -729,31 +729,27 @@ const CarouselGenerator: React.FC<CarouselGeneratorProps> = ({ brands, addToHist
       </div>
 
       {/* Mode Selector */}
-      <div className="mb-6 flex gap-3">
-        <button
-          onClick={() => { setMode('single-image'); setReferenceImages([]); }}
-          disabled={isGenerating}
-          className={`flex-1 flex items-center justify-center gap-2 py-3 rounded-2xl border text-sm font-medium transition-all ${
-            mode === 'single-image'
-              ? 'border-lumina-gold/50 bg-lumina-gold/10 text-lumina-gold'
-              : 'border-lumina-800 text-slate-400 hover:border-lumina-gold/20 hover:text-slate-300'
-          }`}
-        >
-          <ImagePlus size={18} />
-          Tek Görselden Carousel
-        </button>
-        <button
-          onClick={() => { setMode('multi-ref'); setReferenceImages([]); }}
-          disabled={isGenerating}
-          className={`flex-1 flex items-center justify-center gap-2 py-3 rounded-2xl border text-sm font-medium transition-all ${
-            mode === 'multi-ref'
-              ? 'border-lumina-gold/50 bg-lumina-gold/10 text-lumina-gold'
-              : 'border-lumina-800 text-slate-400 hover:border-lumina-gold/20 hover:text-slate-300'
-          }`}
-        >
-          <GalleryHorizontalEnd size={18} />
-          Çoklu Referans
-        </button>
+      <div className="mb-6 flex gap-2">
+        {([
+          { id: 'brand-kit' as CarouselMode, label: 'Marka Kitinden', icon: <Palette size={16} />, desc: 'Referanssız, sıfırdan' },
+          { id: 'single-image' as CarouselMode, label: 'Tek Görsel', icon: <ImagePlus size={16} />, desc: 'Bir görselden stil al' },
+          { id: 'multi-ref' as CarouselMode, label: 'Çoklu Referans', icon: <GalleryHorizontalEnd size={16} />, desc: 'Birden fazla referans' },
+        ]).map(m => (
+          <button
+            key={m.id}
+            onClick={() => { setMode(m.id); if (m.id !== mode) setReferenceImages([]); }}
+            disabled={isGenerating}
+            className={`flex-1 flex flex-col items-center gap-1 py-3 rounded-2xl border text-xs font-medium transition-all ${
+              mode === m.id
+                ? 'border-lumina-gold/50 bg-lumina-gold/10 text-lumina-gold'
+                : 'border-lumina-800 text-slate-400 hover:border-lumina-gold/20 hover:text-slate-300'
+            }`}
+          >
+            {m.icon}
+            <span>{m.label}</span>
+            <span className="text-[9px] opacity-60 font-normal">{m.desc}</span>
+          </button>
+        ))}
       </div>
 
       {/* Past Projects Panel */}
@@ -826,7 +822,8 @@ const CarouselGenerator: React.FC<CarouselGeneratorProps> = ({ brands, addToHist
             )}
           </div>
 
-          {/* Reference Images */}
+          {/* Reference Images — hidden in brand-kit mode */}
+          {mode !== 'brand-kit' && (
           <div className="bg-lumina-900 border border-lumina-800 rounded-2xl p-4">
             <label className="text-xs text-slate-400 uppercase tracking-wider mb-2 block">
               {mode === 'single-image' ? 'Kaynak Görsel' : 'Referans Görseller'} <span className="text-slate-600">(opsiyonel)</span>
@@ -955,6 +952,7 @@ const CarouselGenerator: React.FC<CarouselGeneratorProps> = ({ brands, addToHist
               </div>
             )}
           </div>
+          )}
 
           {/* Product Images (Optional) */}
           <div className="bg-lumina-900 border border-lumina-800 rounded-2xl p-4">
@@ -1365,51 +1363,49 @@ const CarouselGenerator: React.FC<CarouselGeneratorProps> = ({ brands, addToHist
           ) : !isGenerating && !project ? (
             /* Empty State */
             <div className="bg-lumina-900 border border-lumina-800 rounded-2xl p-12 text-center">
-              {mode === 'single-image' ? (
+              {mode === 'brand-kit' ? (
                 <>
-                  <ImagePlus size={48} className="mx-auto text-lumina-800 mb-4" />
-                  <h3 className="text-white font-serif text-xl mb-2">Tek Görselden Carousel</h3>
+                  <Palette size={48} className="mx-auto text-lumina-800 mb-4" />
+                  <h3 className="text-white font-serif text-xl mb-2">Marka Kitinden Carousel</h3>
                   <p className="text-slate-400 text-sm max-w-md mx-auto">
-                    Bir görsel yükleyin — AI görselin stilini, tonunu ve renklerini analiz edip
-                    aynı tasarım dilinde tutarlı bir carousel serisi oluşturacak.
+                    Referans görsel gerekmez. Marka renklerini, sektörünü ve tonunu kullanarak
+                    sıfırdan profesyonel carousel serileri oluşturun.
                   </p>
-                  <div className="mt-6 grid grid-cols-3 gap-4 max-w-sm mx-auto text-center">
+                  <div className="mt-6 grid grid-cols-4 gap-3 max-w-md mx-auto text-center">
                     <div className="text-lumina-gold">
-                      <ImagePlus size={20} className="mx-auto mb-1" />
-                      <p className="text-[10px] text-slate-500">Görsel Yükle</p>
+                      <Palette size={20} className="mx-auto mb-1" />
+                      <p className="text-[10px] text-slate-500">Marka Seç</p>
+                    </div>
+                    <div className="text-lumina-gold">
+                      <Layers size={20} className="mx-auto mb-1" />
+                      <p className="text-[10px] text-slate-500">Tip Seç</p>
                     </div>
                     <div className="text-lumina-gold">
                       <Wand2 size={20} className="mx-auto mb-1" />
-                      <p className="text-[10px] text-slate-500">AI Planlar</p>
-                    </div>
-                    <div className="text-lumina-gold">
-                      <Sparkles size={20} className="mx-auto mb-1" />
-                      <p className="text-[10px] text-slate-500">Carousel Üretilir</p>
-                    </div>
-                  </div>
-                </>
-              ) : (
-                <>
-                  <Layers size={48} className="mx-auto text-lumina-800 mb-4" />
-                  <h3 className="text-white font-serif text-xl mb-2">Çoklu Referans Carousel</h3>
-                  <p className="text-slate-400 text-sm max-w-md mx-auto">
-                    Birden fazla referans görsel yükleyin, marka seçin ve konunuzu yazın.
-                    AI, tutarlı ve profesyonel bir carousel serisi oluşturacak.
-                  </p>
-                  <div className="mt-6 grid grid-cols-3 gap-4 max-w-sm mx-auto text-center">
-                    <div className="text-lumina-gold">
-                      <Upload size={20} className="mx-auto mb-1" />
-                      <p className="text-[10px] text-slate-500">Referanslar Yükle</p>
-                    </div>
-                    <div className="text-lumina-gold">
-                      <Wand2 size={20} className="mx-auto mb-1" />
-                      <p className="text-[10px] text-slate-500">Konu Belirle</p>
+                      <p className="text-[10px] text-slate-500">Konu Yaz</p>
                     </div>
                     <div className="text-lumina-gold">
                       <Sparkles size={20} className="mx-auto mb-1" />
                       <p className="text-[10px] text-slate-500">Üret</p>
                     </div>
                   </div>
+                </>
+              ) : mode === 'single-image' ? (
+                <>
+                  <ImagePlus size={48} className="mx-auto text-lumina-800 mb-4" />
+                  <h3 className="text-white font-serif text-xl mb-2">Tek Görselden Carousel</h3>
+                  <p className="text-slate-400 text-sm max-w-md mx-auto">
+                    Bir görsel yükleyin — AI görselin stilini analiz edip
+                    aynı tasarım dilinde tutarlı bir carousel serisi oluşturacak.
+                  </p>
+                </>
+              ) : (
+                <>
+                  <GalleryHorizontalEnd size={48} className="mx-auto text-lumina-800 mb-4" />
+                  <h3 className="text-white font-serif text-xl mb-2">Çoklu Referans Carousel</h3>
+                  <p className="text-slate-400 text-sm max-w-md mx-auto">
+                    Birden fazla referans görsel yükleyin — her slide kendi referansının stilini alır.
+                  </p>
                 </>
               )}
             </div>
