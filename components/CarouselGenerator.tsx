@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   Layers, Upload, Sparkles, Play, ChevronLeft, ChevronRight, Download, Trash2,
   Loader2, Image as ImageIcon, Palette, CheckCircle2, XCircle, RotateCcw,
-  Wand2, Plus, FolderOpen, Clock, AlertCircle
+  Wand2, Plus, FolderOpen, Clock, AlertCircle, ImagePlus, GalleryHorizontalEnd
 } from 'lucide-react';
 import { Brand, CarouselProject, CarouselSlide, CarouselContentPlan, PipelineImage, GeneratedAsset } from '../types';
 import { fileToGenerativePart } from '../services/geminiService';
@@ -33,8 +33,11 @@ const CREATIVE_TONES = [
   { value: 'genc', label: 'Genc/Dinamik' },
 ];
 
+type CarouselMode = 'multi-ref' | 'single-image';
+
 const CarouselGenerator: React.FC<CarouselGeneratorProps> = ({ brands, addToHistory }) => {
   // ── State ──
+  const [mode, setMode] = useState<CarouselMode>('single-image');
   const [selectedBrandId, setSelectedBrandId] = useState(brands[0]?.id || '');
   const [topic, setTopic] = useState('');
   const [aspectRatio, setAspectRatio] = useState('1:1');
@@ -277,6 +280,34 @@ const CarouselGenerator: React.FC<CarouselGeneratorProps> = ({ brands, addToHist
         </div>
       </div>
 
+      {/* Mode Selector */}
+      <div className="mb-6 flex gap-3">
+        <button
+          onClick={() => { setMode('single-image'); setReferenceImages([]); }}
+          disabled={isGenerating}
+          className={`flex-1 flex items-center justify-center gap-2 py-3 rounded-2xl border text-sm font-medium transition-all ${
+            mode === 'single-image'
+              ? 'border-lumina-gold/50 bg-lumina-gold/10 text-lumina-gold'
+              : 'border-lumina-800 text-slate-400 hover:border-lumina-gold/20 hover:text-slate-300'
+          }`}
+        >
+          <ImagePlus size={18} />
+          Tek Görselden Carousel
+        </button>
+        <button
+          onClick={() => { setMode('multi-ref'); setReferenceImages([]); }}
+          disabled={isGenerating}
+          className={`flex-1 flex items-center justify-center gap-2 py-3 rounded-2xl border text-sm font-medium transition-all ${
+            mode === 'multi-ref'
+              ? 'border-lumina-gold/50 bg-lumina-gold/10 text-lumina-gold'
+              : 'border-lumina-800 text-slate-400 hover:border-lumina-gold/20 hover:text-slate-300'
+          }`}
+        >
+          <GalleryHorizontalEnd size={18} />
+          Çoklu Referans
+        </button>
+      </div>
+
       {/* Past Projects Panel */}
       {showPastProjects && (
         <div className="mb-6 bg-lumina-900 border border-lumina-800 rounded-2xl p-4">
@@ -350,44 +381,96 @@ const CarouselGenerator: React.FC<CarouselGeneratorProps> = ({ brands, addToHist
           {/* Reference Images */}
           <div className="bg-lumina-900 border border-lumina-800 rounded-2xl p-4">
             <label className="text-xs text-slate-400 uppercase tracking-wider mb-2 block">
-              Referans Görseller <span className="text-lumina-gold">*</span>
+              {mode === 'single-image' ? 'Kaynak Görsel' : 'Referans Görseller'} <span className="text-lumina-gold">*</span>
             </label>
             <input
               ref={fileInputRef}
               type="file"
               accept="image/*"
-              multiple
+              multiple={mode === 'multi-ref'}
               className="hidden"
-              onChange={e => handleFileUpload(e.target.files, 'reference')}
+              onChange={e => {
+                if (mode === 'single-image') {
+                  // Single image mode: replace existing
+                  setReferenceImages([]);
+                  handleFileUpload(e.target.files, 'reference');
+                } else {
+                  handleFileUpload(e.target.files, 'reference');
+                }
+              }}
             />
-            <button
-              onClick={() => fileInputRef.current?.click()}
-              disabled={isGenerating}
-              className="w-full border-2 border-dashed border-lumina-800 rounded-xl py-4 text-center hover:border-lumina-gold/40 transition-all group"
-            >
-              <Upload size={20} className="mx-auto text-slate-500 group-hover:text-lumina-gold mb-1" />
-              <span className="text-xs text-slate-500 group-hover:text-slate-300">Görsel yukle</span>
-            </button>
 
-            {referenceImages.length > 0 && (
-              <div className="flex gap-2 mt-2 flex-wrap">
-                {referenceImages.map(img => (
-                  <div key={img.id} className="relative group">
-                    <img
-                      src={`data:image/png;base64,${img.base64}`}
-                      className="w-14 h-14 object-cover rounded-lg border border-lumina-800"
-                    />
-                    {!isGenerating && (
-                      <button
-                        onClick={() => removeImage(img.id, 'reference')}
-                        className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-red-500 text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
-                      >
-                        <XCircle size={12} />
-                      </button>
-                    )}
+            {mode === 'single-image' && referenceImages.length > 0 ? (
+              /* Single Image: Large Preview */
+              <div className="relative group">
+                <img
+                  src={`data:image/png;base64,${referenceImages[0].base64}`}
+                  className="w-full aspect-square object-cover rounded-xl border border-lumina-800"
+                />
+                {!isGenerating && (
+                  <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity rounded-xl flex items-center justify-center gap-2">
+                    <button
+                      onClick={() => fileInputRef.current?.click()}
+                      className="px-3 py-1.5 rounded-lg bg-lumina-gold text-black text-xs font-medium"
+                    >
+                      Degistir
+                    </button>
+                    <button
+                      onClick={() => setReferenceImages([])}
+                      className="px-3 py-1.5 rounded-lg bg-red-500/80 text-white text-xs font-medium"
+                    >
+                      Kaldir
+                    </button>
                   </div>
-                ))}
+                )}
+                <div className="mt-2 text-[10px] text-slate-500 text-center">
+                  Bu görselin stili ve tonu tüm slide'lara uygulanacak
+                </div>
               </div>
+            ) : (
+              /* Upload Area */
+              <>
+                <button
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={isGenerating}
+                  className={`w-full border-2 border-dashed border-lumina-800 rounded-xl ${mode === 'single-image' ? 'py-8' : 'py-4'} text-center hover:border-lumina-gold/40 transition-all group`}
+                >
+                  {mode === 'single-image' ? (
+                    <>
+                      <ImagePlus size={28} className="mx-auto text-slate-500 group-hover:text-lumina-gold mb-2" />
+                      <span className="text-sm text-slate-400 group-hover:text-slate-200 block">Carousel'e dönüstürülecek görseli yükle</span>
+                      <span className="text-[10px] text-slate-600 mt-1 block">AI bu görselin stilini analiz edip tutarli slide'lar üretecek</span>
+                    </>
+                  ) : (
+                    <>
+                      <Upload size={20} className="mx-auto text-slate-500 group-hover:text-lumina-gold mb-1" />
+                      <span className="text-xs text-slate-500 group-hover:text-slate-300">Görsel yükle</span>
+                    </>
+                  )}
+                </button>
+
+                {/* Multi-ref thumbnails */}
+                {mode === 'multi-ref' && referenceImages.length > 0 && (
+                  <div className="flex gap-2 mt-2 flex-wrap">
+                    {referenceImages.map(img => (
+                      <div key={img.id} className="relative group">
+                        <img
+                          src={`data:image/png;base64,${img.base64}`}
+                          className="w-14 h-14 object-cover rounded-lg border border-lumina-800"
+                        />
+                        {!isGenerating && (
+                          <button
+                            onClick={() => removeImage(img.id, 'reference')}
+                            className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-red-500 text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+                          >
+                            <XCircle size={12} />
+                          </button>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </>
             )}
 
             {/* Brand Memory References */}
@@ -400,7 +483,13 @@ const CarouselGenerator: React.FC<CarouselGeneratorProps> = ({ brands, addToHist
                   {brandRefs.slice(0, 6).map((ref: any) => (
                     <button
                       key={ref.id}
-                      onClick={() => handleUseBrandRef(ref)}
+                      onClick={() => {
+                        if (mode === 'single-image') {
+                          setReferenceImages([{ id: `brandref_${ref.id}`, base64: ref.imageBase64, name: `Hafıza: ${ref.tags?.[0] || 'Referans'}` }]);
+                        } else {
+                          handleUseBrandRef(ref);
+                        }
+                      }}
                       disabled={isGenerating}
                       className="relative group"
                       title={`Kullanım: ${ref.usageCount} | ${ref.tags?.join(', ')}`}
@@ -714,26 +803,53 @@ const CarouselGenerator: React.FC<CarouselGeneratorProps> = ({ brands, addToHist
           ) : !isGenerating && !project ? (
             /* Empty State */
             <div className="bg-lumina-900 border border-lumina-800 rounded-2xl p-12 text-center">
-              <Layers size={48} className="mx-auto text-lumina-800 mb-4" />
-              <h3 className="text-white font-serif text-xl mb-2">Carousel Stüdyosuna Hoş Geldiniz</h3>
-              <p className="text-slate-400 text-sm max-w-md mx-auto">
-                Marka seçin, referans görsel yükleyin ve konunuzu yazın.
-                AI, tutarlı ve profesyonel bir carousel serisi oluşturacak.
-              </p>
-              <div className="mt-6 grid grid-cols-3 gap-4 max-w-sm mx-auto text-center">
-                <div className="text-lumina-gold">
-                  <Upload size={20} className="mx-auto mb-1" />
-                  <p className="text-[10px] text-slate-500">Referans Yükle</p>
-                </div>
-                <div className="text-lumina-gold">
-                  <Wand2 size={20} className="mx-auto mb-1" />
-                  <p className="text-[10px] text-slate-500">Konu Belirle</p>
-                </div>
-                <div className="text-lumina-gold">
-                  <Sparkles size={20} className="mx-auto mb-1" />
-                  <p className="text-[10px] text-slate-500">Üret</p>
-                </div>
-              </div>
+              {mode === 'single-image' ? (
+                <>
+                  <ImagePlus size={48} className="mx-auto text-lumina-800 mb-4" />
+                  <h3 className="text-white font-serif text-xl mb-2">Tek Görselden Carousel</h3>
+                  <p className="text-slate-400 text-sm max-w-md mx-auto">
+                    Bir görsel yükleyin — AI görselin stilini, tonunu ve renklerini analiz edip
+                    aynı tasarım dilinde tutarlı bir carousel serisi oluşturacak.
+                  </p>
+                  <div className="mt-6 grid grid-cols-3 gap-4 max-w-sm mx-auto text-center">
+                    <div className="text-lumina-gold">
+                      <ImagePlus size={20} className="mx-auto mb-1" />
+                      <p className="text-[10px] text-slate-500">Görsel Yükle</p>
+                    </div>
+                    <div className="text-lumina-gold">
+                      <Wand2 size={20} className="mx-auto mb-1" />
+                      <p className="text-[10px] text-slate-500">AI Planlar</p>
+                    </div>
+                    <div className="text-lumina-gold">
+                      <Sparkles size={20} className="mx-auto mb-1" />
+                      <p className="text-[10px] text-slate-500">Carousel Üretilir</p>
+                    </div>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <Layers size={48} className="mx-auto text-lumina-800 mb-4" />
+                  <h3 className="text-white font-serif text-xl mb-2">Çoklu Referans Carousel</h3>
+                  <p className="text-slate-400 text-sm max-w-md mx-auto">
+                    Birden fazla referans görsel yükleyin, marka seçin ve konunuzu yazın.
+                    AI, tutarlı ve profesyonel bir carousel serisi oluşturacak.
+                  </p>
+                  <div className="mt-6 grid grid-cols-3 gap-4 max-w-sm mx-auto text-center">
+                    <div className="text-lumina-gold">
+                      <Upload size={20} className="mx-auto mb-1" />
+                      <p className="text-[10px] text-slate-500">Referanslar Yükle</p>
+                    </div>
+                    <div className="text-lumina-gold">
+                      <Wand2 size={20} className="mx-auto mb-1" />
+                      <p className="text-[10px] text-slate-500">Konu Belirle</p>
+                    </div>
+                    <div className="text-lumina-gold">
+                      <Sparkles size={20} className="mx-auto mb-1" />
+                      <p className="text-[10px] text-slate-500">Üret</p>
+                    </div>
+                  </div>
+                </>
+              )}
             </div>
           ) : null}
 
