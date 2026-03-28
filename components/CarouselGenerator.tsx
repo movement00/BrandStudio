@@ -486,7 +486,8 @@ const CarouselGenerator: React.FC<CarouselGeneratorProps> = ({ brands, addToHist
             )}
           </div>
 
-          {/* Typography */}
+          {/* Typography — only in brand-kit mode */}
+          {sourceMode === 'brand-kit' && (
           <div className="bg-lumina-900 border border-lumina-800 rounded-2xl p-4">
             <label className="text-xs text-slate-400 uppercase tracking-wider mb-2 block">Tipografi</label>
             <div className="space-y-1.5 max-h-40 overflow-y-auto pr-1">
@@ -504,6 +505,7 @@ const CarouselGenerator: React.FC<CarouselGeneratorProps> = ({ brands, addToHist
               ))}
             </div>
           </div>
+          )}
 
           {/* Generate Button */}
           <button onClick={handleGenerate} disabled={!canGenerate}
