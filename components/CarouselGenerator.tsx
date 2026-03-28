@@ -157,8 +157,8 @@ const CarouselGenerator: React.FC<CarouselGeneratorProps> = ({ brands, addToHist
       });
 
       if (sourceMode === 'reference') {
-        // ═══ HYBRID PIPELINE: AI clean background + Canvas overlay ═══
-        log('[HYBRID] Referans görseller analiz edilip temiz arka planlar üretilecek...');
+        // ═══ FULL AI PIPELINE: Blueprint → ContentPlan → Reconstruct ═══
+        log('[AI] Referans görseller analiz edilip tam slide\'lar üretilecek...');
 
         const orchestrator = new CarouselOrchestrator();
         orchestratorRef.current = orchestrator;
@@ -166,7 +166,6 @@ const CarouselGenerator: React.FC<CarouselGeneratorProps> = ({ brands, addToHist
           log(`[${event.type.toUpperCase()}] ${event.message}`);
         });
 
-        // Build project for orchestrator
         const project = {
           id: `carousel_${Date.now()}`,
           brandId,
@@ -199,28 +198,16 @@ const CarouselGenerator: React.FC<CarouselGeneratorProps> = ({ brands, addToHist
 
         const result = await orchestrator.execute(project, brand, () => {});
 
-        // AI produced clean backgrounds → now Canvas renders text on top
-        const aiBackgrounds = result.slides
+        // AI generated complete slides (with text) — show directly, NO Canvas overlay
+        const aiSlides = result.slides
           .filter(s => s.status === 'completed' && s.imageBase64)
           .map(s => s.imageBase64!);
 
-        if (aiBackgrounds.length > 0) {
-          log('[RENDER] AI arka planlar hazır — Canvas metin overlay ekleniyor...');
-          const slideInputs: SlideRenderInput[] = brain.slides.map((s, i) => ({
-            slideIndex: i, totalSlides: brain.slides.length,
-            headline: s.headline, bodyText: s.bodyText, ctaText: s.ctaText,
-            iconEmoji: s.iconEmoji, slideNumber: String(i + 1).padStart(2, '0'), subtitleText: s.bodyText,
-          }));
-
-          const rendered = await renderAllCarouselSlides({
-            brand, fontPairing, aspectRatio, carouselType,
-            categoryLabel: brain.categoryLabel, slides: slideInputs,
-            backgroundImages: aiBackgrounds, bgStyle: 'mesh-dark',
-          });
-          setRenderedSlides(rendered);
-          log(`[RENDER] ${rendered.length} slide render edildi!`);
+        if (aiSlides.length > 0) {
+          setRenderedSlides(aiSlides);
+          log(`[TAMAMLANDI] ${aiSlides.length} slide AI ile üretildi!`);
         } else {
-          log('[HATA] AI arka planlar üretilemedi.');
+          log('[HATA] Slide\'lar üretilemedi.');
         }
 
       } else {

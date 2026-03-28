@@ -376,28 +376,31 @@ export class CarouselOrchestrator {
           let imageBase64: string;
 
           if (useBlueprint && slideRefAnalysis) {
-            // ═══ HYBRID PIPELINE — AI arka plan + Canvas metin ═══
-            // 1. Blueprint'ten metin katmanlarını çıkar
-            // 2. AI sadece görsel katmanları üret (temiz arka plan)
-            // 3. Canvas engine metin/ikon/logo ekleyecek (renderAllCarouselSlides)
+            // ═══ FULL BLUEPRINT PIPELINE — AI generates complete slide ═══
+            // AI handles everything: background, text, layout, icons
+            // reconstructFromBlueprint = most powerful generation method
             const slideBp = slideRefAnalysis.blueprint;
+            const slideStyle = slideRefAnalysis.styleAnalysis;
             const slideTopic = `${slideContent.headline} — ${slideContent.bodyText}`;
 
-            const textCount = slideBp.layers.filter(l => l.type === 'text' || l.type === 'logo' || l.type === 'icon').length;
-            const visualCount = slideBp.layers.filter(l => l.type !== 'text' && l.type !== 'logo' && l.type !== 'icon').length;
-            this.emit({ type: 'log', message: `Slide ${i + 1}: ${visualCount} görsel katman üretilecek, ${textCount} metin katmanı Canvas'a bırakılacak...` });
-
-            imageBase64 = await generateCleanBackground(
-              slideBp,
-              brand,
-              refBase64!,
-              project.aspectRatio,
-              slideTopic,
-              i,
-              carouselPlan.slideContents.length,
-              previousSlideBase64
+            this.emit({ type: 'log', message: `Slide ${i + 1}: Direktifler oluşturuluyor...` });
+            const slideDirectives = await generateDesignDirectives(
+              brand, slideTopic, slideStyle, project.aspectRatio, project.creativeTone
             );
-            this.emit({ type: 'log', message: `Slide ${i + 1}: Temiz arka plan hazır — Canvas overlay eklenecek.` });
+            if (this.aborted) throw new Error('İptal edildi.');
+
+            this.emit({ type: 'log', message: `Slide ${i + 1}: ${slideBp.layers.length} katman için içerik planı...` });
+            const contentPlan = await generateContentPlan(
+              slideBp, brand, slideTopic, slideDirectives, project.creativeTone
+            );
+            if (this.aborted) throw new Error('İptal edildi.');
+
+            this.emit({ type: 'log', message: `Slide ${i + 1}: Blueprint'ten tam slide üretiliyor...` });
+            imageBase64 = await reconstructFromBlueprint(
+              slideBp, brand, slideTopic, project.aspectRatio,
+              refBase64, productBase64, contentPlan, slideDirectives,
+              null, previousSlideBase64
+            );
           } else {
             // ═══ STANDARD PIPELINE (brand-kit veya canvas mode) ═══
             imageBase64 = await generateCarouselSlide(
