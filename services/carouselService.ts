@@ -1,5 +1,9 @@
 import { CarouselProject, CarouselSlide, CarouselContentPlan, BrandReference, Brand, StyleAnalysis, DesignBlueprint, PipelineImage, SlideTextOverlay } from '../types';
-import { analyzeImageStyle, decomposeToBlueprint, planCarouselContent, generateCarouselSlide } from './geminiService';
+import {
+  analyzeImageStyle, decomposeToBlueprint, planCarouselContent, generateCarouselSlide,
+  reconstructFromBlueprint, generateContentPlan, generateDesignDirectives,
+  ContentPlan, DesignDirectives
+} from './geminiService';
 import { TYPE_SCALES, SLIDE_LAYOUT_PRESETS, SlideLayoutPreset } from './typographySystem';
 
 // ═══════════════════════════════════════════════════
@@ -322,11 +326,30 @@ export class CarouselOrchestrator {
 
       if (this.aborted) throw new Error('İptal edildi.');
 
-      // ── Step 4: Generate slides sequentially ──
-      this.emit({ type: 'status', message: 'Slide\'lar üretiliyor...' });
+      // ── Step 3.5: Generate Design Directives (if blueprint available) ──
+      let directives: DesignDirectives | null = null;
+      if (hasReferences && blueprint) {
+        this.emit({ type: 'status', message: 'Tasarım direktifleri oluşturuluyor...' });
+        directives = await generateDesignDirectives(
+          brand,
+          project.title,
+          styleAnalysis!,
+          project.aspectRatio,
+          project.creativeTone
+        );
+        this.emit({ type: 'log', message: 'Tasarım direktifleri hazır.' });
+        if (this.aborted) throw new Error('İptal edildi.');
+      }
+
+      // ── Step 4: Generate slides ──
+      const useBlueprint = hasReferences && blueprint && (project.textMode === 'ai');
+      this.emit({ type: 'status', message: useBlueprint
+        ? 'Blueprint pipeline ile slide\'lar üretiliyor (AI metin + katman)...'
+        : 'Slide arka planları üretiliyor...'
+      });
 
       const slides: CarouselSlide[] = [];
-      let masterSlideBase64: string | null = null; // First slide = master template for all others
+      let masterSlideBase64: string | null = null;
 
       for (let i = 0; i < carouselPlan.slideContents.length; i++) {
         if (this.aborted) throw new Error('İptal edildi.');
@@ -334,7 +357,7 @@ export class CarouselOrchestrator {
         const slideContent = carouselPlan.slideContents[i];
         const slideId = `${project.id}_slide_${i}`;
 
-        // Check if slide already completed
+        // Check if already completed
         const existingSlide = updatedProject.slides.find(s => s.order === i && s.status === 'completed' && s.imageBase64);
         if (existingSlide) {
           slides.push(existingSlide);
@@ -353,79 +376,102 @@ export class CarouselOrchestrator {
         this.emit({ type: 'slide-update', message: `Slide ${i + 1}/${carouselPlan.slideContents.length} üretiliyor...`, slideIndex: i });
 
         try {
-          // Pick a reference image (rotate if multiple)
-          const refIdx = i % project.referenceImages.length;
-          const refBase64 = project.referenceImages[refIdx].base64;
-          const refId = project.referenceImages[refIdx].id;
-
-          // Use THIS reference's own analysis (not the shared one)
-          const slideRefAnalysis = perRefAnalysis.find(a => a.refId === refId) || perRefAnalysis[0];
-          const slideStyle = slideRefAnalysis.styleAnalysis;
-          const slideBlueprint = slideRefAnalysis.blueprint;
-
-          // Pick product image if available
+          // Pick reference & product images
+          const refIdx = hasReferences ? i % project.referenceImages.length : -1;
+          const refBase64 = hasReferences ? project.referenceImages[refIdx].base64 : null;
+          const refId = hasReferences ? project.referenceImages[refIdx].id : null;
+          const slideRefAnalysis = refId ? (perRefAnalysis.find(a => a.refId === refId) || perRefAnalysis[0]) : null;
           const productBase64 = project.productImages.length > 0
             ? project.productImages[i % project.productImages.length].base64
             : null;
 
-          const imageBase64 = await generateCarouselSlide(
-            brand,
-            slideContent,
-            carouselPlan,
-            slideStyle,
-            slideBlueprint,
-            i === 0 ? refBase64 : null,       // Reference only for first slide
-            productBase64,
-            project.aspectRatio,
-            i,
-            carouselPlan.slideContents.length,
-            i === 0 ? null : masterSlideBase64, // Master slide as template for subsequent
-            project.carouselType || 'custom'
-          );
+          let imageBase64: string;
+
+          if (useBlueprint && slideRefAnalysis) {
+            // ═══ BLUEPRINT PIPELINE (güçlü sistem) ═══
+            // AI metin yazar, katman katman yeniden üretir
+            const slideBp = slideRefAnalysis.blueprint;
+            const slideTopic = `${slideContent.headline} — ${slideContent.bodyText}`;
+
+            this.emit({ type: 'log', message: `Slide ${i + 1}: Blueprint + ContentPlan ile üretiliyor...` });
+
+            // Generate content plan for this slide's blueprint layers
+            let contentPlan: ContentPlan | null = null;
+            if (directives) {
+              contentPlan = await generateContentPlan(
+                slideBp,
+                brand,
+                slideTopic,
+                directives,
+                project.creativeTone
+              );
+            }
+
+            // Reconstruct from blueprint with brand colors + content plan
+            imageBase64 = await reconstructFromBlueprint(
+              slideBp,
+              brand,
+              slideTopic,
+              project.aspectRatio,
+              i === 0 ? refBase64 : masterSlideBase64,
+              productBase64,
+              contentPlan,
+              directives
+            );
+          } else {
+            // ═══ STANDARD PIPELINE (arka plan + canvas overlay) ═══
+            imageBase64 = await generateCarouselSlide(
+              brand,
+              slideContent,
+              carouselPlan,
+              slideRefAnalysis?.styleAnalysis || null,
+              slideRefAnalysis?.blueprint || null,
+              i === 0 ? refBase64 : null,
+              productBase64,
+              project.aspectRatio,
+              i,
+              carouselPlan.slideContents.length,
+              i === 0 ? null : masterSlideBase64,
+              project.carouselType || 'custom'
+            );
+          }
 
           slide.imageBase64 = imageBase64;
           slide.status = 'completed';
-          if (i === 0) masterSlideBase64 = imageBase64; // Store first as master
+          if (i === 0) masterSlideBase64 = imageBase64;
 
-          // Create default text overlays using typography system
-          const typeScale = TYPE_SCALES[project.aspectRatio] || TYPE_SCALES['1:1'];
-          // Pick layout: first slide = centered-bold, last = bottom-card, middle = story-stack
-          const layoutId = i === 0 ? 'centered-bold'
-            : i === carouselPlan.slideContents.length - 1 ? 'bottom-card'
-            : 'story-stack';
-          const layout = SLIDE_LAYOUT_PRESETS.find(l => l.id === layoutId) || SLIDE_LAYOUT_PRESETS[0];
+          // Create text overlays for canvas mode
+          if (project.textMode === 'canvas') {
+            const typeScale = TYPE_SCALES[project.aspectRatio] || TYPE_SCALES['1:1'];
+            const layoutId = i === 0 ? 'centered-bold'
+              : i === carouselPlan.slideContents.length - 1 ? 'bottom-card'
+              : 'story-stack';
+            const layout = SLIDE_LAYOUT_PRESETS.find(l => l.id === layoutId) || SLIDE_LAYOUT_PRESETS[0];
 
-          const contentMap: Record<string, string> = {
-            'headline': slideContent.headline || '',
-            'body': slideContent.bodyText || '',
-            'cta': slideContent.ctaText || '',
-            'brand': brand.name,
-            'slide-number': `${String(i + 1).padStart(2, '0')}`,
-          };
+            const contentMap: Record<string, string> = {
+              'headline': slideContent.headline || '',
+              'body': slideContent.bodyText || '',
+              'cta': slideContent.ctaText || '',
+              'brand': brand.name,
+              'slide-number': `${String(i + 1).padStart(2, '0')}`,
+            };
+            const brandAccent = brand.palette[0]?.hex || '#F8BE00';
 
-          const brandAccent = brand.palette[0]?.hex || '#F8BE00';
-
-          const defaultOverlays: SlideTextOverlay[] = layout.overlays
-            .filter(o => contentMap[o.role])
-            .map(o => ({
-              id: `${slide.id}_${o.role}`,
-              text: contentMap[o.role],
-              x: o.x,
-              y: o.y,
-              fontSize: typeScale[o.fontSizeKey],
-              fontWeight: o.fontWeight,
-              color: o.bgStyle === 'pill' ? '#000000' : '#FFFFFF',
-              bgColor: o.bgStyle === 'pill' ? brandAccent :
-                       o.bgStyle === 'frosted' ? '#000000' :
-                       o.bgStyle === 'banner' ? '#000000' : undefined,
-              bgOpacity: o.bgStyle === 'pill' ? 1 :
-                         o.bgStyle === 'frosted' ? 0.35 :
-                         o.bgStyle === 'banner' ? 0.6 : undefined,
-              textAlign: o.textAlign,
-              maxWidth: o.maxWidth,
-            }));
-
-          slide.textOverlays = defaultOverlays;
+            slide.textOverlays = layout.overlays
+              .filter(o => contentMap[o.role])
+              .map(o => ({
+                id: `${slide.id}_${o.role}`,
+                text: contentMap[o.role],
+                x: o.x, y: o.y,
+                fontSize: typeScale[o.fontSizeKey],
+                fontWeight: o.fontWeight,
+                color: o.bgStyle === 'pill' ? '#000000' : '#FFFFFF',
+                bgColor: o.bgStyle === 'pill' ? brandAccent : o.bgStyle === 'frosted' ? '#000000' : undefined,
+                bgOpacity: o.bgStyle === 'pill' ? 1 : o.bgStyle === 'frosted' ? 0.35 : undefined,
+                textAlign: o.textAlign,
+                maxWidth: o.maxWidth,
+              }));
+          }
 
           this.emit({ type: 'slide-update', message: `Slide ${i + 1} tamamlandı!`, slideIndex: i, data: imageBase64 });
         } catch (err: any) {

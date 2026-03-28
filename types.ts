@@ -247,6 +247,7 @@ export interface CarouselProject {
     blueprint: DesignBlueprint;
   }[];
   carouselPlan?: CarouselContentPlan; // AI-generated content plan
+  textMode: 'ai' | 'canvas';         // 'ai' = AI writes text on image, 'canvas' = programmatic overlay
   status: 'draft' | 'planning' | 'generating' | 'completed' | 'failed';
   creativeTone?: string;
   createdAt: number;

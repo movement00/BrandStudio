@@ -336,6 +336,7 @@ const CarouselGenerator: React.FC<CarouselGeneratorProps> = ({ brands, addToHist
   const [aspectRatio, setAspectRatio] = useState('1:1');
   const [slideCount, setSlideCount] = useState(6);
   const [creativeTone, setCreativeTone] = useState('');
+  const [textMode, setTextMode] = useState<'ai' | 'canvas'>('ai');
   const [selectedFontPairing, setSelectedFontPairing] = useState<FontPairing>(FONT_PAIRINGS[0]);
   const [referenceImages, setReferenceImages] = useState<PipelineImage[]>([]);
   const [productImages, setProductImages] = useState<PipelineImage[]>([]);
@@ -590,6 +591,7 @@ const CarouselGenerator: React.FC<CarouselGeneratorProps> = ({ brands, addToHist
       slides: [],
       referenceImages,
       productImages,
+      textMode,
       creativeTone: creativeTone || undefined,
       status: 'draft',
       createdAt: Date.now(),
@@ -1097,6 +1099,38 @@ const CarouselGenerator: React.FC<CarouselGeneratorProps> = ({ brands, addToHist
                     {c}
                   </button>
                 ))}
+              </div>
+            </div>
+
+            <div>
+              <label className="text-xs text-slate-400 uppercase tracking-wider mb-2 block">Metin Modu</label>
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  onClick={() => setTextMode('ai')}
+                  disabled={isGenerating}
+                  className={`py-2 rounded-xl border text-xs transition-all ${
+                    textMode === 'ai'
+                      ? 'border-lumina-gold/50 bg-lumina-gold/10 text-lumina-gold'
+                      : 'border-lumina-800 text-slate-400 hover:border-lumina-gold/20'
+                  }`}
+                >
+                  <Sparkles size={14} className="mx-auto mb-1" />
+                  AI Metin
+                  <div className="text-[9px] opacity-60 mt-0.5">Blueprint ile üretir</div>
+                </button>
+                <button
+                  onClick={() => setTextMode('canvas')}
+                  disabled={isGenerating}
+                  className={`py-2 rounded-xl border text-xs transition-all ${
+                    textMode === 'canvas'
+                      ? 'border-lumina-gold/50 bg-lumina-gold/10 text-lumina-gold'
+                      : 'border-lumina-800 text-slate-400 hover:border-lumina-gold/20'
+                  }`}
+                >
+                  <Layers size={14} className="mx-auto mb-1" />
+                  Canvas Metin
+                  <div className="text-[9px] opacity-60 mt-0.5">Sen düzenlersin</div>
+                </button>
               </div>
             </div>
 
