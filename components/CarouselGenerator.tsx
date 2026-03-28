@@ -7,6 +7,7 @@ import {
 import { Brand, CarouselProject, CarouselSlide, CarouselContentPlan, PipelineImage, GeneratedAsset, SlideTextOverlay } from '../types';
 import { fileToGenerativePart } from '../services/geminiService';
 import { generateCarouselTopics } from '../services/geminiService';
+import { FONT_PAIRINGS, FontPairing, getGoogleFontsUrl, SLIDE_LAYOUT_PRESETS, TYPE_SCALES } from '../services/typographySystem';
 
 // ═══════════════════════════════════════════════════
 // Text Overlay Editor Sub-component
@@ -15,11 +16,12 @@ import { generateCarouselTopics } from '../services/geminiService';
 interface TextOverlayEditorProps {
   slide: CarouselSlide;
   brand: Brand;
+  fontPairing: FontPairing;
   onUpdate: (overlays: SlideTextOverlay[]) => void;
   onExport: (slideId: string) => void;
 }
 
-const TextOverlayEditor: React.FC<TextOverlayEditorProps> = ({ slide, brand, onUpdate, onExport }) => {
+const TextOverlayEditor: React.FC<TextOverlayEditorProps> = ({ slide, brand, fontPairing, onUpdate, onExport }) => {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [showTextPanel, setShowTextPanel] = useState(true);
 
@@ -76,14 +78,17 @@ const TextOverlayEditor: React.FC<TextOverlayEditorProps> = ({ slide, brand, onU
               transform: 'translate(-50%, -50%)',
               maxWidth: `${overlay.maxWidth}%`,
               textAlign: overlay.textAlign,
+              fontFamily: overlay.fontSize >= 36 ? fontPairing.heading.family : fontPairing.body.family,
               fontSize: `${overlay.fontSize}px`,
               fontWeight: overlay.fontWeight === 'extrabold' ? 800 : overlay.fontWeight === 'bold' ? 700 : 400,
+              letterSpacing: `${overlay.fontSize >= 36 ? fontPairing.heading.letterSpacing : fontPairing.body.letterSpacing}em`,
+              textTransform: (overlay.fontSize >= 36 ? fontPairing.heading.textTransform : 'none') as any,
               color: overlay.color,
               backgroundColor: overlay.bgColor ? `${overlay.bgColor}${Math.round((overlay.bgOpacity || 0) * 255).toString(16).padStart(2, '0')}` : 'transparent',
-              padding: overlay.bgColor ? '4px 12px' : '0',
-              borderRadius: overlay.bgColor ? '6px' : '0',
-              lineHeight: 1.3,
-              textShadow: !overlay.bgColor ? '0 2px 8px rgba(0,0,0,0.8)' : 'none',
+              padding: overlay.bgColor ? '6px 16px' : '0',
+              borderRadius: overlay.bgColor ? '8px' : '0',
+              lineHeight: overlay.fontSize >= 36 ? fontPairing.heading.lineHeight : fontPairing.body.lineHeight,
+              textShadow: !overlay.bgColor ? '0 2px 8px rgba(0,0,0,0.8), 0 0 20px rgba(0,0,0,0.4)' : 'none',
               userSelect: 'none',
             }}
           >
@@ -314,6 +319,7 @@ const CarouselGenerator: React.FC<CarouselGeneratorProps> = ({ brands, addToHist
   const [aspectRatio, setAspectRatio] = useState('1:1');
   const [slideCount, setSlideCount] = useState(6);
   const [creativeTone, setCreativeTone] = useState('');
+  const [selectedFontPairing, setSelectedFontPairing] = useState<FontPairing>(FONT_PAIRINGS[0]);
   const [referenceImages, setReferenceImages] = useState<PipelineImage[]>([]);
   const [productImages, setProductImages] = useState<PipelineImage[]>([]);
 
@@ -340,6 +346,20 @@ const CarouselGenerator: React.FC<CarouselGeneratorProps> = ({ brands, addToHist
   const logsEndRef = useRef<HTMLDivElement>(null);
 
   const selectedBrand = brands.find(b => b.id === selectedBrandId);
+
+  // Load Google Fonts when font pairing changes
+  useEffect(() => {
+    const url = getGoogleFontsUrl(selectedFontPairing);
+    const linkId = 'carousel-google-fonts';
+    let link = document.getElementById(linkId) as HTMLLinkElement | null;
+    if (!link) {
+      link = document.createElement('link');
+      link.id = linkId;
+      link.rel = 'stylesheet';
+      document.head.appendChild(link);
+    }
+    link.href = url;
+  }, [selectedFontPairing]);
 
   // Load past projects and brand references when brand changes
   useEffect(() => {
@@ -441,7 +461,8 @@ const CarouselGenerator: React.FC<CarouselGeneratorProps> = ({ brands, addToHist
 
         ctx.textAlign = overlay.textAlign;
         ctx.textBaseline = 'middle';
-        ctx.font = `${overlay.fontWeight === 'extrabold' ? '800' : overlay.fontWeight === 'bold' ? '700' : '400'} ${scaledFontSize}px "Inter", "Segoe UI", Arial, sans-serif`;
+        const fontFamily = overlay.fontSize >= 36 ? selectedFontPairing.heading.family : selectedFontPairing.body.family;
+        ctx.font = `${overlay.fontWeight === 'extrabold' ? '800' : overlay.fontWeight === 'bold' ? '700' : '400'} ${scaledFontSize}px ${fontFamily}`;
 
         // Background pill
         if (overlay.bgColor && overlay.bgOpacity) {
@@ -1005,6 +1026,43 @@ const CarouselGenerator: React.FC<CarouselGeneratorProps> = ({ brands, addToHist
             </div>
           </div>
 
+          {/* Typography */}
+          <div className="bg-lumina-900 border border-lumina-800 rounded-2xl p-4 space-y-3">
+            <label className="text-xs text-slate-400 uppercase tracking-wider block">Tipografi</label>
+            <div className="space-y-1.5 max-h-48 overflow-y-auto pr-1">
+              {FONT_PAIRINGS.map(fp => (
+                <button
+                  key={fp.id}
+                  onClick={() => setSelectedFontPairing(fp)}
+                  disabled={isGenerating}
+                  className={`w-full text-left p-2.5 rounded-xl border transition-all ${
+                    selectedFontPairing.id === fp.id
+                      ? 'border-lumina-gold/50 bg-lumina-gold/5'
+                      : 'border-lumina-800 hover:border-lumina-gold/20'
+                  }`}
+                >
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs text-white font-medium">{fp.name}</span>
+                    {selectedFontPairing.id === fp.id && <CheckCircle2 size={12} className="text-lumina-gold" />}
+                  </div>
+                  <div className="flex items-center gap-2 mt-1">
+                    <span className="text-[10px] text-lumina-gold">{fp.mood}</span>
+                    <span className="text-[10px] text-slate-600">|</span>
+                    <span className="text-[10px] text-slate-500">{fp.bestFor.slice(0, 2).join(', ')}</span>
+                  </div>
+                  <div className="mt-1.5 flex gap-2">
+                    <span style={{ fontFamily: fp.heading.family, fontWeight: fp.heading.weight }} className="text-sm text-white">
+                      Aa
+                    </span>
+                    <span style={{ fontFamily: fp.body.family, fontWeight: fp.body.weight }} className="text-xs text-slate-400 self-end">
+                      Body text
+                    </span>
+                  </div>
+                </button>
+              ))}
+            </div>
+          </div>
+
           {/* Generate Button */}
           <button
             onClick={isGenerating ? handleAbort : handleStartGeneration}
@@ -1120,6 +1178,7 @@ const CarouselGenerator: React.FC<CarouselGeneratorProps> = ({ brands, addToHist
                 <TextOverlayEditor
                   slide={completedSlides[currentSlidePreview]}
                   brand={selectedBrand}
+                  fontPairing={selectedFontPairing}
                   onUpdate={(overlays) => handleUpdateSlideOverlays(completedSlides[currentSlidePreview].order, overlays)}
                   onExport={handleExportSlide}
                 />

@@ -1878,7 +1878,15 @@ export const generateCarouselSlide = async (
     : { dominant: brand.primaryColor, secondary: brand.secondaryColor, accent: brand.primaryColor };
 
   const prompt = `
-    GÖREV: Bir carousel serisinin ${slideIndex + 1}/${totalSlides} numaralı slide'ını üret.
+    GÖREV: Bir carousel serisinin ${slideIndex + 1}/${totalSlides} numaralı slide'ı için ARKA PLAN GÖRSELİ üret.
+
+    ██████████████████████████████████████████████████████████████████
+    ██  KRİTİK: BU GÖRSEL SADECE ARKA PLAN — METİN YAZMA!         ██
+    ██  Görsel üzerine HİÇBİR metin, yazı, harf, rakam,           ██
+    ██  kelime, cümle, logo metni YAZMA. Saf görsel arka plan.     ██
+    ██  Metinleri kullanıcı kendisi ekleyecek.                     ██
+    ██████████████████████████████████████████████████████████████████
+
     Bu slide BAĞIMSIZ değil — bir serinin PARÇASI. Tüm slide'lar aynı görsel DNA'yı paylaşmalı.
 
     ═══════════════════════════════════════════════════════════
@@ -1888,9 +1896,6 @@ export const generateCarouselSlide = async (
     Sektör: ${brand.industry}
     ${brand.description ? `Açıklama: ${brand.description}` : ''}
     Ton: ${brand.tone}
-    ${brand.instagram ? `Instagram: @${brand.instagram}` : ''}
-    ${brand.phone ? `Telefon: ${brand.phone}` : ''}
-    ${brand.website ? `Website: ${brand.website}` : ''}
 
     ═══════════════════════════════════════════════════════════
     CAROUSEL SERİSİ BİLGİSİ
@@ -1904,25 +1909,20 @@ export const generateCarouselSlide = async (
     TUTARLILIK KURALLARI (TÜM SLIDE'LAR İÇİN AYNI)
     ═══════════════════════════════════════════════════════════
     RENK AKIŞI: ${carouselPlan.colorFlow}
-    TİPOGRAFİ: ${carouselPlan.typographyConsistency}
     GÖRSEL İPUCU: ${carouselPlan.visualThread}
 
     BU DEĞİŞMEZ:
-    - Arka plan stili/rengi DEĞİŞMEZ
-    - Font ailesi DEĞİŞMEZ
-    - Font boyut hiyerarşisi DEĞİŞMEZ
+    - Arka plan stili/rengi/deseni TÜM slide'larda AYNI
+    - Dekoratif elementler (gradient, şekiller, dokular) TÜM slide'larda TEKRARLANMALI
     - Renk paleti DEĞİŞMEZ
-    - Dekoratif elementler TÜM slide'larda TEKRARLANMALI
-    - Logo konumu DEĞİŞMEZ
     - Padding/margin oranları DEĞİŞMEZ
 
     ═══════════════════════════════════════════════════════════
-    BU SLIDE'IN İÇERİĞİ
+    BU SLIDE'IN GÖRSEL İÇERİĞİ (metin DEĞİL, görsel yön)
     ═══════════════════════════════════════════════════════════
-    Başlık: "${slideContent.headline}"
-    Açıklama: "${slideContent.bodyText}"
-    ${slideContent.ctaText ? `CTA: "${slideContent.ctaText}"` : ''}
+    Konu: "${slideContent.headline} — ${slideContent.bodyText}"
     Görsel Yön: ${slideContent.visualDirection}
+    Anlatım Rolü: ${slideContent.narrativeRole}
 
     ═══════════════════════════════════════════════════════════
     STİL DNA (referans görselden çıkarılmıştır)
@@ -1969,7 +1969,10 @@ export const generateCarouselSlide = async (
     FORMAT: ${aspectRatio}
     KALİTE: 4K, profesyonel reklam ajansı kalitesinde.
 
-    ${previousSlideBase64 ? 'ÖNCEKİ SLIDE GÖRSELİ VERİLDİ — bununla AYNI görsel stili, arka plan, font, renk kullan. TUTARLILIK KRİTİK!' : ''}
+    SON HATIRLATMA: Bu görsel SADE ARKA PLAN. Üzerine HİÇBİR metin, yazı, harf, sayı, logo yazısı KOYMA.
+    Sadece görsel elementler: renkler, gradyanlar, şekiller, fotoğraflar, dokular, ikonlar (opsiyonel).
+
+    ${previousSlideBase64 ? 'ÖNCEKİ SLIDE GÖRSELİ VERİLDİ — bununla AYNI görsel stili, arka plan kullan. TUTARLILIK KRİTİK!' : ''}
   `;
 
   const parts: any[] = [];

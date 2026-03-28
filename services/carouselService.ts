@@ -1,5 +1,6 @@
 import { CarouselProject, CarouselSlide, CarouselContentPlan, BrandReference, Brand, StyleAnalysis, DesignBlueprint, PipelineImage, SlideTextOverlay } from '../types';
 import { analyzeImageStyle, decomposeToBlueprint, planCarouselContent, generateCarouselSlide } from './geminiService';
+import { TYPE_SCALES, SLIDE_LAYOUT_PRESETS, SlideLayoutPreset } from './typographySystem';
 
 // ═══════════════════════════════════════════════════
 // Supabase REST helpers (same pattern as scoutService)
@@ -381,46 +382,44 @@ export class CarouselOrchestrator {
           slide.status = 'completed';
           previousSlideBase64 = imageBase64;
 
-          // Create default text overlays from carousel plan
-          const defaultOverlays: SlideTextOverlay[] = [];
-          if (slideContent.headline) {
-            defaultOverlays.push({
-              id: `${slide.id}_headline`,
-              text: slideContent.headline,
-              x: 50, y: i === 0 ? 40 : 30,
-              fontSize: 32,
-              fontWeight: 'extrabold',
-              color: brand.palette[0]?.hex || '#FFFFFF',
-              bgColor: '#000000', bgOpacity: 0.5,
-              textAlign: 'center',
-              maxWidth: 85,
-            });
-          }
-          if (slideContent.bodyText) {
-            defaultOverlays.push({
-              id: `${slide.id}_body`,
-              text: slideContent.bodyText,
-              x: 50, y: i === 0 ? 55 : 50,
-              fontSize: 18,
-              fontWeight: 'normal',
-              color: '#FFFFFF',
-              textAlign: 'center',
-              maxWidth: 80,
-            });
-          }
-          if (slideContent.ctaText) {
-            defaultOverlays.push({
-              id: `${slide.id}_cta`,
-              text: slideContent.ctaText,
-              x: 50, y: 80,
-              fontSize: 16,
-              fontWeight: 'bold',
-              color: '#000000',
-              bgColor: brand.palette[0]?.hex || '#F8BE00', bgOpacity: 1,
-              textAlign: 'center',
-              maxWidth: 50,
-            });
-          }
+          // Create default text overlays using typography system
+          const typeScale = TYPE_SCALES[project.aspectRatio] || TYPE_SCALES['1:1'];
+          // Pick layout: first slide = centered-bold, last = bottom-card, middle = story-stack
+          const layoutId = i === 0 ? 'centered-bold'
+            : i === carouselPlan.slideContents.length - 1 ? 'bottom-card'
+            : 'story-stack';
+          const layout = SLIDE_LAYOUT_PRESETS.find(l => l.id === layoutId) || SLIDE_LAYOUT_PRESETS[0];
+
+          const contentMap: Record<string, string> = {
+            'headline': slideContent.headline || '',
+            'body': slideContent.bodyText || '',
+            'cta': slideContent.ctaText || '',
+            'brand': brand.name,
+            'slide-number': `${String(i + 1).padStart(2, '0')}`,
+          };
+
+          const brandAccent = brand.palette[0]?.hex || '#F8BE00';
+
+          const defaultOverlays: SlideTextOverlay[] = layout.overlays
+            .filter(o => contentMap[o.role])
+            .map(o => ({
+              id: `${slide.id}_${o.role}`,
+              text: contentMap[o.role],
+              x: o.x,
+              y: o.y,
+              fontSize: typeScale[o.fontSizeKey],
+              fontWeight: o.fontWeight,
+              color: o.bgStyle === 'pill' ? '#000000' : '#FFFFFF',
+              bgColor: o.bgStyle === 'pill' ? brandAccent :
+                       o.bgStyle === 'frosted' ? '#000000' :
+                       o.bgStyle === 'banner' ? '#000000' : undefined,
+              bgOpacity: o.bgStyle === 'pill' ? 1 :
+                         o.bgStyle === 'frosted' ? 0.35 :
+                         o.bgStyle === 'banner' ? 0.6 : undefined,
+              textAlign: o.textAlign,
+              maxWidth: o.maxWidth,
+            }));
+
           slide.textOverlays = defaultOverlays;
 
           this.emit({ type: 'slide-update', message: `Slide ${i + 1} tamamlandı!`, slideIndex: i, data: imageBase64 });
