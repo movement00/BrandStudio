@@ -8,6 +8,7 @@ import { Brand, CarouselProject, CarouselSlide, CarouselContentPlan, PipelineIma
 import { fileToGenerativePart } from '../services/geminiService';
 import { generateCarouselTopics } from '../services/geminiService';
 import { FONT_PAIRINGS, FontPairing, getGoogleFontsUrl, SLIDE_LAYOUT_PRESETS, TYPE_SCALES } from '../services/typographySystem';
+import { renderSlideWithOverlays, renderAllSlides } from '../services/canvasEngine';
 
 // ═══════════════════════════════════════════════════
 // Text Overlay Editor Sub-component
@@ -344,6 +345,8 @@ const CarouselGenerator: React.FC<CarouselGeneratorProps> = ({ brands, addToHist
   const [isGenerating, setIsGenerating] = useState(false);
   const [logs, setLogs] = useState<string[]>([]);
   const [currentSlidePreview, setCurrentSlidePreview] = useState(0);
+  const [renderedSlides, setRenderedSlides] = useState<string[]>([]); // Canvas-rendered final slides
+  const [isRendering, setIsRendering] = useState(false);
 
   // Topic suggestions
   const [suggestedTopics, setSuggestedTopics] = useState<string[]>([]);
@@ -523,15 +526,58 @@ const CarouselGenerator: React.FC<CarouselGeneratorProps> = ({ brands, addToHist
   // ── Export ALL slides with overlays ──
   const handleExportAllWithOverlays = async () => {
     if (!project) return;
+
+    // Prefer canvas-rendered slides
+    if (renderedSlides.length > 0) {
+      const items = renderedSlides.map((base64, i) => ({
+        base64,
+        filename: `${selectedBrand?.name || 'carousel'}_slide_${i + 1}.png`,
+      }));
+      await downloadMultipleImages(items);
+      return;
+    }
+
+    // Fallback: export raw slides
     for (const slide of project.slides.filter(s => s.status === 'completed' && s.imageBase64)) {
       await handleExportSlide(slide.id);
-      await new Promise(r => setTimeout(r, 300)); // Small delay between downloads
+      await new Promise(r => setTimeout(r, 300));
+    }
+  };
+
+  // ── Canvas Render All Slides ──
+  const handleRenderAllSlides = async (proj: CarouselProject) => {
+    if (!proj.carouselPlan || !selectedBrand) return;
+    const completedWithImages = proj.slides.filter(s => s.status === 'completed' && s.imageBase64);
+    if (completedWithImages.length === 0) return;
+
+    setIsRendering(true);
+    try {
+      const rendered = await renderAllSlides(
+        completedWithImages,
+        proj.carouselPlan,
+        selectedBrand,
+        selectedFontPairing,
+        proj.aspectRatio,
+        proj.carouselType || 'custom'
+      );
+      setRenderedSlides(rendered);
+    } catch (err) {
+      console.error('Canvas render hatası:', err);
+    } finally {
+      setIsRendering(false);
+    }
+  };
+
+  // ── Re-render when font pairing changes ──
+  const handleReRender = async () => {
+    if (project && project.carouselPlan) {
+      await handleRenderAllSlides(project);
     }
   };
 
   // ── Start Generation ──
   const handleStartGeneration = async () => {
-    if (!selectedBrand || !topic.trim() || referenceImages.length === 0) return;
+    if (!selectedBrand || !topic.trim()) return;
 
     const projectId = `carousel_${Date.now()}`;
     const newProject: CarouselProject = {
@@ -571,7 +617,12 @@ const CarouselGenerator: React.FC<CarouselGeneratorProps> = ({ brands, addToHist
         setProject({ ...updated });
       });
 
-      // Add completed slides to history
+      // Canvas render: compose final slides with programmatic overlays
+      setLogs(prev => [...prev, '[STATUS] Canvas render başlatılıyor...']);
+      await handleRenderAllSlides(result);
+      setLogs(prev => [...prev, '[COMPLETE] Canvas render tamamlandı!']);
+
+      // Add rendered slides to history
       result.slides.forEach(slide => {
         if (slide.imageBase64) {
           addToHistory({
@@ -1213,15 +1264,76 @@ const CarouselGenerator: React.FC<CarouselGeneratorProps> = ({ brands, addToHist
                 </div>
               </div>
 
-              {/* Main Preview with Text Overlay Editor */}
+              {/* Main Preview — Canvas Rendered or Raw */}
               {completedSlides[currentSlidePreview]?.imageBase64 && selectedBrand && (
-                <TextOverlayEditor
-                  slide={completedSlides[currentSlidePreview]}
-                  brand={selectedBrand}
-                  fontPairing={selectedFontPairing}
-                  onUpdate={(overlays) => handleUpdateSlideOverlays(completedSlides[currentSlidePreview].order, overlays)}
-                  onExport={handleExportSlide}
-                />
+                <div>
+                  {/* Canvas Rendered Preview (priority) */}
+                  {renderedSlides[currentSlidePreview] ? (
+                    <div className="relative rounded-xl overflow-hidden border border-lumina-800 mb-3">
+                      <img
+                        src={`data:image/png;base64,${renderedSlides[currentSlidePreview]}`}
+                        className="w-full block"
+                        alt={`Rendered Slide ${currentSlidePreview + 1}`}
+                      />
+                      <div className="absolute top-2 left-2 px-2 py-0.5 rounded-md bg-emerald-500/20 text-emerald-400 text-[10px] font-medium">
+                        Canvas Render
+                      </div>
+                      <button
+                        onClick={() => downloadBase64Image(renderedSlides[currentSlidePreview], `${selectedBrand?.name}_carousel_slide_${currentSlidePreview + 1}.png`)}
+                        className="absolute bottom-3 right-3 p-2 rounded-lg bg-black/60 text-white hover:bg-black/80 transition-all"
+                      >
+                        <Download size={16} />
+                      </button>
+                    </div>
+                  ) : (
+                    /* Raw AI Background Preview */
+                    <div className="relative rounded-xl overflow-hidden border border-lumina-800 mb-3">
+                      <img
+                        src={`data:image/png;base64,${completedSlides[currentSlidePreview].imageBase64}`}
+                        className="w-full block"
+                        alt={`Raw Slide ${currentSlidePreview + 1}`}
+                      />
+                      <div className="absolute top-2 left-2 px-2 py-0.5 rounded-md bg-amber-500/20 text-amber-400 text-[10px] font-medium">
+                        AI Arka Plan
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Re-render and Font Change Controls */}
+                  <div className="flex gap-2 mb-3">
+                    <button
+                      onClick={handleReRender}
+                      disabled={isRendering}
+                      className="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-emerald-500/20 text-emerald-400 text-xs hover:bg-emerald-500/30 transition-all disabled:opacity-40"
+                    >
+                      {isRendering ? <Loader2 size={12} className="animate-spin" /> : <RotateCcw size={12} />}
+                      Yeniden Render
+                    </button>
+                    <select
+                      value={selectedFontPairing.id}
+                      onChange={e => {
+                        const fp = FONT_PAIRINGS.find(f => f.id === e.target.value);
+                        if (fp) setSelectedFontPairing(fp);
+                      }}
+                      className="flex-1 bg-lumina-950 border border-lumina-800 rounded-lg px-2 py-1.5 text-xs text-white focus:outline-none focus:border-lumina-gold/50"
+                    >
+                      {FONT_PAIRINGS.map(fp => (
+                        <option key={fp.id} value={fp.id}>{fp.name}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {/* Text Overlay Editor (for fine-tuning raw AI background) */}
+                  {!renderedSlides.length && (
+                    <TextOverlayEditor
+                      slide={completedSlides[currentSlidePreview]}
+                      brand={selectedBrand}
+                      fontPairing={selectedFontPairing}
+                      onUpdate={(overlays) => handleUpdateSlideOverlays(completedSlides[currentSlidePreview].order, overlays)}
+                      onExport={handleExportSlide}
+                    />
+                  )}
+                </div>
               )}
 
               {/* Thumbnail Strip */}
@@ -1236,9 +1348,9 @@ const CarouselGenerator: React.FC<CarouselGeneratorProps> = ({ brands, addToHist
                         : 'border-lumina-800 hover:border-lumina-gold/30'
                     }`}
                   >
-                    {slide.imageBase64 ? (
+                    {(renderedSlides[i] || slide.imageBase64) ? (
                       <img
-                        src={`data:image/png;base64,${slide.imageBase64}`}
+                        src={`data:image/png;base64,${renderedSlides[i] || slide.imageBase64}`}
                         className="w-full h-full object-cover"
                       />
                     ) : (
