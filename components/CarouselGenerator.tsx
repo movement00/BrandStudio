@@ -1149,7 +1149,8 @@ const CarouselGenerator: React.FC<CarouselGeneratorProps> = ({ brands, addToHist
             </div>
           </div>
 
-          {/* Typography */}
+          {/* Typography — only in Canvas mode */}
+          {textMode === 'canvas' && (
           <div className="bg-lumina-900 border border-lumina-800 rounded-2xl p-4 space-y-3">
             <label className="text-xs text-slate-400 uppercase tracking-wider block">Tipografi</label>
             <div className="space-y-1.5 max-h-48 overflow-y-auto pr-1">
@@ -1185,6 +1186,7 @@ const CarouselGenerator: React.FC<CarouselGeneratorProps> = ({ brands, addToHist
               ))}
             </div>
           </div>
+          )}
 
           {/* Generate Button */}
           <button
