@@ -8,6 +8,7 @@ import { fileToGenerativePart } from '../services/geminiService';
 import { FONT_PAIRINGS, FontPairing, getGoogleFontsUrl } from '../services/typographySystem';
 import { renderAllCarouselSlides, CarouselRenderConfig, SlideRenderInput } from '../services/canvasEngine';
 import { generateCarouselBrainContent, generateCarouselTopicSuggestions, CarouselBrainOutput } from '../services/carouselBrain';
+import { CarouselOrchestrator, CarouselEvent } from '../services/carouselService';
 import { downloadBase64Image, downloadMultipleImages } from '../services/downloadService';
 
 interface CarouselGeneratorProps {
@@ -49,8 +50,11 @@ const BG_STYLES = [
 
 type BgStyleChoice = typeof BG_STYLES[number]['value'];
 
+type SourceMode = 'brand-kit' | 'reference';
+
 const CarouselGenerator: React.FC<CarouselGeneratorProps> = ({ brands, addToHistory }) => {
   // ── Config State ──
+  const [sourceMode, setSourceMode] = useState<SourceMode>('brand-kit');
   const [brandId, setBrandId] = useState(brands[0]?.id || '');
   const [topic, setTopic] = useState('');
   const [carouselType, setCarouselType] = useState<CarouselType>('educational');
@@ -60,6 +64,7 @@ const CarouselGenerator: React.FC<CarouselGeneratorProps> = ({ brands, addToHist
   const [bgStyle, setBgStyle] = useState<BgStyleChoice>('mesh-dark');
   const [bgImages, setBgImages] = useState<(string | null)[]>([]);
   const [globalBgImage, setGlobalBgImage] = useState<string | null>(null);
+  const [referenceImages, setReferenceImages] = useState<PipelineImage[]>([]);
 
   // ── Generation State ──
   const [brainOutput, setBrainOutput] = useState<CarouselBrainOutput | null>(null);
@@ -76,6 +81,8 @@ const CarouselGenerator: React.FC<CarouselGeneratorProps> = ({ brands, addToHist
   const logsEndRef = useRef<HTMLDivElement>(null);
   const bgInputRef = useRef<HTMLInputElement>(null);
   const bgGlobalInputRef = useRef<HTMLInputElement>(null);
+  const refInputRef = useRef<HTMLInputElement>(null);
+  const orchestratorRef = useRef<CarouselOrchestrator | null>(null);
 
   const brand = brands.find(b => b.id === brandId);
 
@@ -91,6 +98,17 @@ const CarouselGenerator: React.FC<CarouselGeneratorProps> = ({ brands, addToHist
   useEffect(() => { logsEndRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [logs]);
 
   const log = (msg: string) => setLogs(prev => [...prev, msg]);
+
+  // ── Reference Image Upload ──
+  const handleRefUpload = async (files: FileList | null) => {
+    if (!files) return;
+    const newImages: PipelineImage[] = [];
+    for (let i = 0; i < files.length; i++) {
+      const base64 = await fileToGenerativePart(files[i]);
+      newImages.push({ id: `ref_${Date.now()}_${i}`, base64, name: files[i].name });
+    }
+    setReferenceImages(prev => [...prev, ...newImages]);
+  };
 
   // ── Background Upload ──
   const handleBgUpload = async (files: FileList | null, slideIdx?: number) => {
@@ -117,6 +135,11 @@ const CarouselGenerator: React.FC<CarouselGeneratorProps> = ({ brands, addToHist
   // ── GENERATE CAROUSEL ──
   const handleGenerate = async () => {
     if (!brand || !topic.trim()) return;
+    if (sourceMode === 'reference' && referenceImages.length === 0) {
+      alert('Referans modu için en az 1 görsel yükleyin.');
+      return;
+    }
+
     setIsGenerating(true);
     setRenderedSlides([]);
     setBrainOutput(null);
@@ -133,39 +156,97 @@ const CarouselGenerator: React.FC<CarouselGeneratorProps> = ({ brands, addToHist
         log(`  Slide ${i + 1}: ${s.iconEmoji} ${s.headline} (${s.narrativeRole})`);
       });
 
-      // Step 2: Canvas Render — pixel-perfect slides
-      log('[RENDER] Canvas render başlatılıyor...');
-      setIsRendering(true);
+      if (sourceMode === 'reference') {
+        // ═══ HYBRID PIPELINE: AI clean background + Canvas overlay ═══
+        log('[HYBRID] Referans görseller analiz edilip temiz arka planlar üretilecek...');
 
-      const slideInputs: SlideRenderInput[] = brain.slides.map((s, i) => ({
-        slideIndex: i,
-        totalSlides: brain.slides.length,
-        headline: s.headline,
-        bodyText: s.bodyText,
-        ctaText: s.ctaText,
-        iconEmoji: s.iconEmoji,
-        slideNumber: String(i + 1).padStart(2, '0'),
-        subtitleText: s.bodyText,
-      }));
+        const orchestrator = new CarouselOrchestrator();
+        orchestratorRef.current = orchestrator;
+        orchestrator.subscribe((event: CarouselEvent) => {
+          log(`[${event.type.toUpperCase()}] ${event.message}`);
+        });
 
-      const renderConfig: CarouselRenderConfig = {
-        brand,
-        fontPairing,
-        aspectRatio,
-        carouselType,
-        categoryLabel: brain.categoryLabel,
-        slides: slideInputs,
-        backgroundImages: bgStyle === 'upload' ? bgImages : undefined,
-        globalBackgroundImage: bgStyle === 'upload' ? (globalBgImage || undefined) : undefined,
-        bgStyle: bgStyle !== 'upload' ? bgStyle as any : 'mesh-dark',
-      };
+        // Build project for orchestrator
+        const project = {
+          id: `carousel_${Date.now()}`,
+          brandId,
+          title: topic.trim(),
+          carouselType,
+          aspectRatio,
+          slideCount,
+          slides: [],
+          referenceImages,
+          productImages: [] as PipelineImage[],
+          textMode: 'ai' as const,
+          status: 'draft' as const,
+          createdAt: Date.now(),
+          updatedAt: Date.now(),
+          carouselPlan: {
+            theme: brain.theme,
+            slideContents: brain.slides.map(s => ({
+              slideOrder: s.slideIndex,
+              headline: s.headline,
+              bodyText: s.bodyText,
+              ctaText: s.ctaText,
+              visualDirection: s.visualDirection,
+              narrativeRole: s.narrativeRole,
+            })),
+            colorFlow: brain.colorFlow,
+            typographyConsistency: '',
+            visualThread: brain.visualThread,
+          },
+        };
 
-      const rendered = await renderAllCarouselSlides(renderConfig);
-      setRenderedSlides(rendered);
-      log(`[RENDER] ${rendered.length} slide render edildi!`);
+        const result = await orchestrator.execute(project, brand, () => {});
+
+        // AI produced clean backgrounds → now Canvas renders text on top
+        const aiBackgrounds = result.slides
+          .filter(s => s.status === 'completed' && s.imageBase64)
+          .map(s => s.imageBase64!);
+
+        if (aiBackgrounds.length > 0) {
+          log('[RENDER] AI arka planlar hazır — Canvas metin overlay ekleniyor...');
+          const slideInputs: SlideRenderInput[] = brain.slides.map((s, i) => ({
+            slideIndex: i, totalSlides: brain.slides.length,
+            headline: s.headline, bodyText: s.bodyText, ctaText: s.ctaText,
+            iconEmoji: s.iconEmoji, slideNumber: String(i + 1).padStart(2, '0'), subtitleText: s.bodyText,
+          }));
+
+          const rendered = await renderAllCarouselSlides({
+            brand, fontPairing, aspectRatio, carouselType,
+            categoryLabel: brain.categoryLabel, slides: slideInputs,
+            backgroundImages: aiBackgrounds, bgStyle: 'mesh-dark',
+          });
+          setRenderedSlides(rendered);
+          log(`[RENDER] ${rendered.length} slide render edildi!`);
+        } else {
+          log('[HATA] AI arka planlar üretilemedi.');
+        }
+
+      } else {
+        // ═══ BRAND-KIT MODE: Programmatic background + Canvas ═══
+        log('[RENDER] Canvas render başlatılıyor...');
+        setIsRendering(true);
+
+        const slideInputs: SlideRenderInput[] = brain.slides.map((s, i) => ({
+          slideIndex: i, totalSlides: brain.slides.length,
+          headline: s.headline, bodyText: s.bodyText, ctaText: s.ctaText,
+          iconEmoji: s.iconEmoji, slideNumber: String(i + 1).padStart(2, '0'), subtitleText: s.bodyText,
+        }));
+
+        const rendered = await renderAllCarouselSlides({
+          brand, fontPairing, aspectRatio, carouselType,
+          categoryLabel: brain.categoryLabel, slides: slideInputs,
+          backgroundImages: bgStyle === 'upload' ? bgImages : undefined,
+          globalBackgroundImage: bgStyle === 'upload' ? (globalBgImage || undefined) : undefined,
+          bgStyle: bgStyle !== 'upload' ? bgStyle as any : 'mesh-dark',
+        });
+        setRenderedSlides(rendered);
+        log(`[RENDER] ${rendered.length} slide render edildi!`);
+      }
 
       // Add to history
-      rendered.forEach((base64, i) => {
+      renderedSlides.forEach((base64, i) => {
         addToHistory({
           id: `carousel_${Date.now()}_${i}`,
           url: base64,
@@ -181,6 +262,7 @@ const CarouselGenerator: React.FC<CarouselGeneratorProps> = ({ brands, addToHist
     } finally {
       setIsGenerating(false);
       setIsRendering(false);
+      orchestratorRef.current = null;
     }
   };
 
@@ -244,6 +326,58 @@ const CarouselGenerator: React.FC<CarouselGeneratorProps> = ({ brands, addToHist
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* ═══ LEFT: Configuration ═══ */}
         <div className="lg:col-span-1 space-y-4">
+
+          {/* Source Mode */}
+          <div className="flex gap-2">
+            <button onClick={() => setSourceMode('brand-kit')} disabled={isGenerating}
+              className={`flex-1 py-3 rounded-2xl border text-xs font-medium transition-all flex flex-col items-center gap-1 ${
+                sourceMode === 'brand-kit' ? 'border-lumina-gold/50 bg-lumina-gold/10 text-lumina-gold' : 'border-lumina-800 text-slate-400 hover:border-lumina-gold/20'
+              }`}>
+              <Palette size={16} />
+              Marka Kitinden
+              <span className="text-[9px] opacity-60">Programatik arka plan</span>
+            </button>
+            <button onClick={() => setSourceMode('reference')} disabled={isGenerating}
+              className={`flex-1 py-3 rounded-2xl border text-xs font-medium transition-all flex flex-col items-center gap-1 ${
+                sourceMode === 'reference' ? 'border-lumina-gold/50 bg-lumina-gold/10 text-lumina-gold' : 'border-lumina-800 text-slate-400 hover:border-lumina-gold/20'
+              }`}>
+              <ImageIcon size={16} />
+              Referans Görsel
+              <span className="text-[9px] opacity-60">AI arka plan + Canvas metin</span>
+            </button>
+          </div>
+
+          {/* Reference Images (only in reference mode) */}
+          {sourceMode === 'reference' && (
+            <div className="bg-lumina-900 border border-lumina-800 rounded-2xl p-4">
+              <label className="text-xs text-slate-400 uppercase tracking-wider mb-2 block">
+                Referans Görseller <span className="text-lumina-gold">*</span>
+              </label>
+              <input ref={refInputRef} type="file" accept="image/*" multiple className="hidden"
+                onChange={e => handleRefUpload(e.target.files)} />
+              <button onClick={() => refInputRef.current?.click()} disabled={isGenerating}
+                className="w-full border-2 border-dashed border-lumina-800 rounded-xl py-4 text-center hover:border-lumina-gold/40 transition-all group">
+                <Upload size={20} className="mx-auto text-slate-500 group-hover:text-lumina-gold mb-1" />
+                <span className="text-xs text-slate-500 group-hover:text-slate-300 block">Görsel yükle (her slide için 1 referans)</span>
+                <span className="text-[10px] text-slate-600 block mt-1">AI arka planı üretir, Canvas metin ekler</span>
+              </button>
+              {referenceImages.length > 0 && (
+                <div className="flex gap-2 mt-2 flex-wrap">
+                  {referenceImages.map((img, idx) => (
+                    <div key={img.id} className="relative group">
+                      <img src={`data:image/png;base64,${img.base64}`}
+                        className="w-14 h-14 object-cover rounded-lg border border-lumina-800" />
+                      <span className="absolute bottom-0 left-0 bg-lumina-gold text-black text-[8px] font-bold px-1 rounded-tr-md rounded-bl-lg">{idx + 1}</span>
+                      <button onClick={() => setReferenceImages(prev => prev.filter(r => r.id !== img.id))}
+                        className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-red-500 text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                        <XCircle size={12} />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
 
           {/* Brand */}
           <div className="bg-lumina-900 border border-lumina-800 rounded-2xl p-4">
@@ -333,7 +467,8 @@ const CarouselGenerator: React.FC<CarouselGeneratorProps> = ({ brands, addToHist
               </div>
             </div>
 
-            {/* Background Style */}
+            {/* Background Style — only in brand-kit mode */}
+            {sourceMode === 'brand-kit' && (
             <div>
               <label className="text-xs text-slate-400 uppercase tracking-wider mb-2 block">Arka Plan Stili</label>
               <div className="grid grid-cols-3 gap-1.5">
@@ -361,6 +496,7 @@ const CarouselGenerator: React.FC<CarouselGeneratorProps> = ({ brands, addToHist
                 </div>
               )}
             </div>
+            )}
           </div>
 
           {/* Typography */}
