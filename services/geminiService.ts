@@ -2254,3 +2254,86 @@ export const generateCarouselTopics = async (
   const parsed = JSON.parse(text);
   return (parsed.topics || []).slice(0, count);
 };
+
+// ══════════════════════════════════════════════════════════════
+// 10. HYBRID CAROUSEL — Strip text, regenerate clean background
+// ══════════════════════════════════════════════════════════════
+
+export const generateCleanBackground = async (
+  blueprint: DesignBlueprint,
+  brand: Brand,
+  referenceImageBase64: string,
+  aspectRatio: string,
+  topic: string,
+  slideIndex: number,
+  totalSlides: number,
+  previousCleanBgBase64?: string | null
+): Promise<string> => {
+  const ai = getAI();
+
+  const visualLayers = blueprint.layers.filter(l =>
+    l.type === 'background' || l.type === 'shape' || l.type === 'decoration' ||
+    l.type === 'overlay' || l.type === 'image'
+  );
+  const textLayers = blueprint.layers.filter(l =>
+    l.type === 'text' || l.type === 'logo' || l.type === 'icon'
+  );
+
+  const bc = brand.palette.length >= 3
+    ? { dominant: brand.palette[0].hex, secondary: brand.palette[1].hex, accent: brand.palette[2].hex }
+    : { dominant: brand.primaryColor, secondary: brand.secondaryColor, accent: brand.primaryColor };
+
+  const vizJSON = JSON.stringify({
+    canvas: { ...blueprint.canvas, backgroundColor: bc.dominant },
+    layout: blueprint.layout,
+    layers: visualLayers.map(l => ({
+      ...l,
+      style: {
+        ...l.style,
+        color: l.type === 'background' ? bc.dominant : l.style.color,
+        gradient: l.style.gradient ? l.style.gradient + ` (${bc.dominant} -> ${bc.secondary})` : undefined,
+      },
+    })),
+    colorSystem: { dominant: bc.dominant, secondary: bc.secondary, accent: bc.accent },
+  }, null, 2);
+
+  const emptyAreas = textLayers.map(l =>
+    `(${l.position.x},${l.position.y}) ${l.size.width}x${l.size.height}: BOS BIRAK`
+  ).join('; ');
+
+  const prompt = `
+    Referans gorselin SADECE GORSEL KATMANLARINI (arka plan, sekiller, dekorasyon) yeniden uret.
+    METIN alanlarini BOS BIRAK - metin programatik eklenecek.
+    HICBIR METIN/YAZI/HARF/RAKAM/LOGO YAZISI URETME.
+
+    GORSEL BLUEPRINT: ${vizJSON}
+    BOS ALANLAR: ${emptyAreas}
+
+    MARKA: ${brand.name} | RENKLER: ${brand.palette.map(c => c.hex).join(', ')}
+    Dominant %60: ${bc.dominant} | Ikincil %30: ${bc.secondary} | Vurgu %10: ${bc.accent}
+    Slide ${slideIndex + 1}/${totalSlides} | Konu: ${topic}
+    ${previousCleanBgBase64 ? 'ONCEKI SLIDE VERILDI - ayni arka plan stili koru.' : ''}
+    FORMAT: ${aspectRatio} | KALITE: 4K
+  `;
+
+  const parts: any[] = [];
+  if (previousCleanBgBase64) {
+    parts.push({ text: "ONCEKI SLIDE BG - ayni stili koru:" });
+    parts.push({ inlineData: { mimeType: 'image/png', data: previousCleanBgBase64 } });
+  }
+  parts.push({ text: "REFERANS - gorsel katmanlari uret, METIN URETME:" });
+  parts.push({ inlineData: { mimeType: 'image/png', data: referenceImageBase64 } });
+  parts.push({ text: prompt });
+
+  const response = await ai.models.generateContent({
+    model: 'gemini-3-pro-image-preview',
+    contents: { parts },
+    config: { imageConfig: { aspectRatio, imageSize: "2K" } }
+  });
+
+  const candidates = response.candidates;
+  if (!candidates?.[0]) throw new Error(`Temiz arka plan olusturulamadi (slide ${slideIndex + 1}).`);
+  const imagePart = candidates[0].content.parts.find((p: any) => p.inlineData);
+  if (!imagePart?.inlineData) throw new Error(`Slide ${slideIndex + 1} gorsel verisi bulunamadi.`);
+  return imagePart.inlineData.data;
+};

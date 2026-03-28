@@ -2,7 +2,7 @@ import { CarouselProject, CarouselSlide, CarouselContentPlan, BrandReference, Br
 import {
   analyzeImageStyle, decomposeToBlueprint, planCarouselContent, generateCarouselSlide,
   reconstructFromBlueprint, generateContentPlan, generateDesignDirectives,
-  ContentPlan, DesignDirectives
+  generateCleanBackground, ContentPlan, DesignDirectives
 } from './geminiService';
 import { TYPE_SCALES, SLIDE_LAYOUT_PRESETS, SlideLayoutPreset } from './typographySystem';
 
@@ -376,48 +376,28 @@ export class CarouselOrchestrator {
           let imageBase64: string;
 
           if (useBlueprint && slideRefAnalysis) {
-            // ═══ BLUEPRINT PIPELINE — HER SLIDE KENDİ REFERANSINDAN ═══
+            // ═══ HYBRID PIPELINE — AI arka plan + Canvas metin ═══
+            // 1. Blueprint'ten metin katmanlarını çıkar
+            // 2. AI sadece görsel katmanları üret (temiz arka plan)
+            // 3. Canvas engine metin/ikon/logo ekleyecek (renderAllCarouselSlides)
             const slideBp = slideRefAnalysis.blueprint;
-            const slideStyle = slideRefAnalysis.styleAnalysis;
             const slideTopic = `${slideContent.headline} — ${slideContent.bodyText}`;
 
-            // Generate directives for THIS slide's reference style
-            this.emit({ type: 'log', message: `Slide ${i + 1}: Ref ${refIdx + 1} blueprint'inden direktifler oluşturuluyor...` });
-            const slideDirectives = await generateDesignDirectives(
-              brand,
-              slideTopic,
-              slideStyle,
-              project.aspectRatio,
-              project.creativeTone
-            );
-            if (this.aborted) throw new Error('İptal edildi.');
+            const textCount = slideBp.layers.filter(l => l.type === 'text' || l.type === 'logo' || l.type === 'icon').length;
+            const visualCount = slideBp.layers.filter(l => l.type !== 'text' && l.type !== 'logo' && l.type !== 'icon').length;
+            this.emit({ type: 'log', message: `Slide ${i + 1}: ${visualCount} görsel katman üretilecek, ${textCount} metin katmanı Canvas'a bırakılacak...` });
 
-            // Generate content plan for THIS slide's blueprint layers
-            this.emit({ type: 'log', message: `Slide ${i + 1}: ${slideBp.layers.length} katman için içerik planı oluşturuluyor...` });
-            const contentPlan = await generateContentPlan(
+            imageBase64 = await generateCleanBackground(
               slideBp,
               brand,
-              slideTopic,
-              slideDirectives,
-              project.creativeTone
-            );
-            if (this.aborted) throw new Error('İptal edildi.');
-
-            // Reconstruct from THIS slide's own blueprint + its own content
-            // Pass previous slide for carousel consistency (icon style, numbering, decorations)
-            this.emit({ type: 'log', message: `Slide ${i + 1}: Blueprint'ten yeniden oluşturuluyor (${slideBp.layers.length} katman)...` });
-            imageBase64 = await reconstructFromBlueprint(
-              slideBp,
-              brand,
-              slideTopic,
+              refBase64!,
               project.aspectRatio,
-              refBase64,           // THIS slide's own reference image
-              productBase64,
-              contentPlan,
-              slideDirectives,
-              null,                // assetPlan
-              previousSlideBase64  // carousel consistency reference
+              slideTopic,
+              i,
+              carouselPlan.slideContents.length,
+              previousSlideBase64
             );
+            this.emit({ type: 'log', message: `Slide ${i + 1}: Temiz arka plan hazır — Canvas overlay eklenecek.` });
           } else {
             // ═══ STANDARD PIPELINE (brand-kit veya canvas mode) ═══
             imageBase64 = await generateCarouselSlide(
