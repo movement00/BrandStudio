@@ -1859,6 +1859,7 @@ export const planCarouselContent = async (
     ═══════════════════════════════════════════════════════════
     ${topic}
 
+    ${styleAnalysis ? `
     ═══════════════════════════════════════════════════════════
     REFERANS STİL
     ═══════════════════════════════════════════════════════════
@@ -1866,12 +1867,18 @@ export const planCarouselContent = async (
     Mood: ${styleAnalysis.mood}
     Artistik Stil: ${styleAnalysis.artisticStyle}
     Arka Plan: ${styleAnalysis.backgroundDetails}
+    ` : ''}
 
+    ${blueprint ? `
     BLUEPRINT STİLİ:
     Canvas: ${blueprint.canvas.style}, Mood: ${blueprint.canvas.mood}
     Layout: ${blueprint.layout.type}, Alignment: ${blueprint.layout.alignment}
     Tipografi: Heading → ${blueprint.typography.headingStyle}, Body → ${blueprint.typography.bodyStyle}
     Renkler: Dominant ${blueprint.colorSystem.dominant}, Secondary ${blueprint.colorSystem.secondary}, Accent ${blueprint.colorSystem.accent}
+    ` : `
+    MARKA KİTİNDEN PLANLA (referans yok):
+    Marka renk paleti ve sektör bilgisine göre profesyonel carousel planı oluştur.
+    `}
 
     ${creativeTone ? `KREATİF YAKLAŞIM: ${creativeTone}` : ''}
     ${pastCarouselThemes?.length ? `GEÇMİŞ CAROUSEL TEMALARI (bunlardan farklı ol): ${pastCarouselThemes.join(', ')}` : ''}
