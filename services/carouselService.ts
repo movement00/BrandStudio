@@ -274,19 +274,24 @@ export class CarouselOrchestrator {
             continue;
           }
 
-          this.emit({ type: 'log', message: `Referans ${r + 1}/${project.referenceImages.length} analiz ediliyor: ${refImg.name}` });
-
+          // Step A: Style Analysis
+          this.emit({ type: 'log', message: `Referans ${r + 1}/${project.referenceImages.length} — Stil analizi: ${refImg.name}` });
           const refStyle = await analyzeImageStyle(refImg.base64);
           if (this.aborted) throw new Error('İptal edildi.');
+          this.emit({ type: 'log', message: `  ✓ Stil: ${refStyle.artisticStyle} | Mood: ${refStyle.mood}` });
 
+          // Step B: Blueprint Decomposition (katman katman JSON)
+          this.emit({ type: 'log', message: `Referans ${r + 1}/${project.referenceImages.length} — Blueprint ayrıştırma (katman katman JSON)...` });
           const refBlueprint = await decomposeToBlueprint(refImg.base64);
           if (this.aborted) throw new Error('İptal edildi.');
+
+          const layerSummary = refBlueprint.layers.map(l => `${l.type}${l.type === 'text' ? `("${l.content.slice(0, 20)}...")` : ''}`).join(', ');
+          this.emit({ type: 'log', message: `  ✓ Blueprint: ${refBlueprint.layers.length} katman [${layerSummary}]` });
+          this.emit({ type: 'log', message: `  ✓ Layout: ${refBlueprint.layout.type} | Canvas: ${refBlueprint.canvas.style} | Renkler: ${refBlueprint.colorSystem.dominant}/${refBlueprint.colorSystem.secondary}/${refBlueprint.colorSystem.accent}` });
 
           perRefAnalysis = [...perRefAnalysis, { refId: refImg.id, styleAnalysis: refStyle, blueprint: refBlueprint }];
           updatedProject = { ...updatedProject, perRefAnalysis };
           onProjectUpdate(updatedProject);
-
-          this.emit({ type: 'log', message: `Referans ${r + 1} tamamlandı: ${refStyle.artisticStyle} / ${refBlueprint.canvas.style}` });
         }
       }
 
