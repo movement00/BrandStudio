@@ -17,22 +17,33 @@ export interface ContentPlan {
 }
 
 // ═══ API Key Management ═══
+// Key stored in localStorage (persists) — user enters via UI modal
+// Never bundled into build, never sent to our servers
 const API_KEY_STORAGE = 'lumina_gemini_api_key';
 
 export function getApiKey(): string {
-  // 1. Build-time env (Vercel / AI Studio)
-  const envKey = process.env.API_KEY || process.env.GEMINI_API_KEY || '';
-  if (envKey) return envKey;
-  // 2. User-provided (localStorage)
+  // User-provided key from localStorage
   try { return localStorage.getItem(API_KEY_STORAGE) || ''; } catch { return ''; }
 }
 
 export function setApiKey(key: string) {
-  try { localStorage.setItem(API_KEY_STORAGE, key); } catch {}
+  const trimmed = key.trim();
+  if (!trimmed) return;
+  try { localStorage.setItem(API_KEY_STORAGE, trimmed); } catch {}
+}
+
+export function clearApiKey() {
+  try { localStorage.removeItem(API_KEY_STORAGE); } catch {}
 }
 
 export function hasApiKey(): boolean {
   return getApiKey().length > 0;
+}
+
+export function getMaskedApiKey(): string {
+  const key = getApiKey();
+  if (key.length < 8) return key ? '****' : '';
+  return key.slice(0, 4) + '...' + key.slice(-4);
 }
 
 function getAI(): GoogleGenAI {

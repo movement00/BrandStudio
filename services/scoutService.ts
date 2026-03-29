@@ -1,8 +1,8 @@
 import { ScoutResult, ScoutInspiration, Brand, StyleAnalysis } from '../types';
 import { analyzeImageStyle, generateBrandedImage, generateSmartSearchQueries, scoreDesignQuality } from './geminiService';
 
-const SUPABASE_URL = 'https://yvsvxurquhtzaeuszwtb.supabase.co';
-const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inl2c3Z4dXJxdWh0emFldXN6d3RiIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQzNDE2MjAsImV4cCI6MjA4OTkxNzYyMH0.7xSR9mazaNDOmsTbotldB_yO3utM_UlDHyglOzmF1nI';
+const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL || '';
+const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY || '';
 
 // Backend endpoints - Python scraper (primary) → Supabase Edge Function (fallback)
 const SCRAPER_URL = 'http://localhost:8899';
