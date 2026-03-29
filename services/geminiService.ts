@@ -2,13 +2,20 @@
 import { GoogleGenAI, Type } from "@google/genai";
 import { Brand, StyleAnalysis, DesignBlueprint, BlueprintLayer, BrandAsset, BrandPricing } from "../types";
 
-// Content plan: AI-generated text for each layer
+// Content plan: AI-generated text AND visual replacements for each layer
 export interface ContentPlan {
   layerContents: {
     layerId: string;
     originalContent: string;
     newContent: string;
     reasoning: string;
+  }[];
+  // Visual object replacements for image/icon/illustration layers
+  visualReplacements: {
+    layerId: string;
+    originalDescription: string;  // "a clock on a desk"
+    newDescription: string;       // "a brain with lightning bolts"
+    reasoning: string;            // "topic is about mental focus"
   }[];
   headline: string;
   subheadline: string;
@@ -374,6 +381,14 @@ export const reconstructFromBlueprint = async (
       }
     }
 
+    // Inject visual replacements for image/icon/decoration layers
+    if (contentPlan?.visualReplacements && (l.type === 'image' || l.type === 'icon' || l.type === 'decoration')) {
+      const visualPlan = contentPlan.visualReplacements.find(v => v.layerId === l.id);
+      if (visualPlan) {
+        l.content = visualPlan.newDescription;
+      }
+    }
+
     // Remap colors to brand palette
     if (l.type === 'background') {
       l.style.color = brandColors.dominant;
@@ -438,6 +453,18 @@ export const reconstructFromBlueprint = async (
     Alt Başlık: "${contentPlan.subheadline}"
     CTA: "${contentPlan.ctaText}"
     Marka Mesajı: "${contentPlan.brandMessage}"` : ''}
+
+    ${contentPlan?.visualReplacements?.length ? `
+    ═══════════════════════════════════════════════════════════
+    GÖRSEL DEĞİŞİMLERİ (OBJELERİ DEĞİŞTİR)
+    ═══════════════════════════════════════════════════════════
+    Aşağıdaki görsel katmanlardaki objeleri DEĞİŞTİR — aynı konum, boyut ve stilde ama FARKLI obje:
+    ${contentPlan.visualReplacements.map(vr =>
+      `• Katman "${vr.layerId}": "${vr.originalDescription}" → "${vr.newDescription}" (${vr.reasoning})`
+    ).join('\n    ')}
+    ÖNEMLİ: Objelerin STİLİ aynı kalmalı (aynı çizim tarzı, aynı renk tonu, aynı detay seviyesi).
+    Sadece objenin KENDİSİ değişmeli.
+    ` : ''}
 
     ═══════════════════════════════════════════════════════════
     RENK PALETİ (SADECE BU RENKLERİ KULLAN)
@@ -748,6 +775,8 @@ export const generateContentPlan = async (
   const ai = getAI();
 
   const textLayers = blueprint.layers.filter(l => l.type === 'text' || l.type === 'logo');
+  const visualLayers = blueprint.layers.filter(l => l.type === 'image' || l.type === 'icon' || l.type === 'decoration');
+
   const layerDescriptions = textLayers.map((l, i) => {
     return `Katman ${i + 1} (ID: ${l.id}, Tip: ${l.type}):
     - Orijinal İçerik: "${l.content}"
@@ -757,9 +786,16 @@ export const generateContentPlan = async (
     - Maksimum karakter tahmini: ${l.style.fontSize === 'xl' ? '25 karakter' : l.style.fontSize === 'lg' ? '40 karakter' : l.style.fontSize === 'md' ? '60 karakter' : '80 karakter'}`;
   }).join('\n\n');
 
+  const visualLayerDescriptions = visualLayers.map((l, i) => {
+    return `Görsel Katman ${i + 1} (ID: ${l.id}, Tip: ${l.type}):
+    - Orijinal İçerik/Açıklama: "${l.content}"
+    - Konum: ${l.position.x}, ${l.position.y}
+    - Boyut: ${l.size.width} x ${l.size.height}`;
+  }).join('\n\n');
+
   const prompt = `
-    Sen ${brand.industry} sektöründe uzmanlaşmış, ödüllü bir reklam metin yazarısın (copywriter).
-    Aşağıdaki tasarım şablonundaki metin katmanları için YENİ İÇERİK yazman gerekiyor.
+    Sen ${brand.industry} sektöründe uzmanlaşmış, ödüllü bir kreatif direktörsün.
+    Aşağıdaki tasarım şablonundaki METİN ve GÖRSEL katmanları için YENİ İÇERİK belirlemen gerekiyor.
 
     MARKA:
     - İsim: ${brand.name}
@@ -775,8 +811,20 @@ export const generateContentPlan = async (
     - Tipografi: ${directives.typographyRules}
     - Hiyerarşi: ${directives.hierarchyPlan}
 
-    MEVCUTMETİN KATMANLARI:
+    MEVCUT METİN KATMANLARI:
     ${layerDescriptions}
+
+    ${visualLayers.length > 0 ? `
+    MEVCUT GÖRSEL KATMANLAR (ikon, illüstrasyon, fotoğraf):
+    ${visualLayerDescriptions}
+
+    GÖRSEL DEĞİŞİM KURALLARI:
+    - Her görsel katman için KONUYA UYGUN yeni bir görsel açıklaması yaz
+    - Aynı boyut, konum ve stil kalmalı — sadece İÇERİK değişmeli
+    - Örnek: Orijinal "saat" → Konu "stres yönetimi" ise → "meditasyon yapan kişi silueti"
+    - Örnek: Orijinal "kitap" → Konu "teknoloji" ise → "laptop ve kod ekranı"
+    - Sektöre uygun, markanın tonuyla uyumlu görseller öner
+    ` : ''}
 
     KURALLAR:
     1. Her metin katmanı için MARKA TONUNA uygun, KONUYLA İLGİLİ yeni içerik yaz
@@ -819,12 +867,25 @@ export const generateContentPlan = async (
               required: ['layerId', 'originalContent', 'newContent', 'reasoning'],
             },
           },
+          visualReplacements: {
+            type: Type.ARRAY,
+            items: {
+              type: Type.OBJECT,
+              properties: {
+                layerId: { type: Type.STRING },
+                originalDescription: { type: Type.STRING },
+                newDescription: { type: Type.STRING },
+                reasoning: { type: Type.STRING },
+              },
+              required: ['layerId', 'originalDescription', 'newDescription', 'reasoning'],
+            },
+          },
           headline: { type: Type.STRING },
           subheadline: { type: Type.STRING },
           ctaText: { type: Type.STRING },
           brandMessage: { type: Type.STRING },
         },
-        required: ['layerContents', 'headline', 'subheadline', 'ctaText', 'brandMessage'],
+        required: ['layerContents', 'visualReplacements', 'headline', 'subheadline', 'ctaText', 'brandMessage'],
       },
     },
   });
