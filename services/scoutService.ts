@@ -1,8 +1,10 @@
 import { ScoutResult, ScoutInspiration, Brand, StyleAnalysis } from '../types';
 import { analyzeImageStyle, generateBrandedImage, generateSmartSearchQueries, scoreDesignQuality } from './geminiService';
 
-const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL || '';
-const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY || '';
+import { SUPABASE_CONFIG } from './supabaseConfig';
+
+const SUPABASE_URL = SUPABASE_CONFIG.url;
+const SUPABASE_ANON_KEY = SUPABASE_CONFIG.anonKey;
 
 // Backend endpoints - Python scraper (primary) → Supabase Edge Function (fallback)
 const SCRAPER_URL = 'http://localhost:8899';

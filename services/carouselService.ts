@@ -10,8 +10,10 @@ import { TYPE_SCALES, SLIDE_LAYOUT_PRESETS, SlideLayoutPreset } from './typograp
 // Supabase REST helpers (same pattern as scoutService)
 // ═══════════════════════════════════════════════════
 
-const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL || '';
-const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY || '';
+import { SUPABASE_CONFIG } from './supabaseConfig';
+
+const SUPABASE_URL = SUPABASE_CONFIG.url;
+const SUPABASE_ANON_KEY = SUPABASE_CONFIG.anonKey;
 
 const supabaseRest = (table: string, params: string = '') =>
   `${SUPABASE_URL}/rest/v1/${table}${params ? `?${params}` : ''}`;
