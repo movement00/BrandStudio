@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { Zap, Globe, Sparkles, Loader2, Download, Square, FileText, RotateCcw, Check, XCircle, Clock, Edit2, Send, CheckCircle2 } from 'lucide-react';
-import { Brand, GeneratedAsset, QoollineCampaign, PipelineImage, PipelineConfig, PipelineRun, PipelineResult } from '../types';
-import { reviseGeneratedImage, adaptRevisedToFormat, reviewCreativeQuality } from '../services/geminiService';
+import { Zap, Globe, Sparkles, Loader2, Download, Square, FileText, RotateCcw, Check, XCircle, Clock, Edit2, Send, CheckCircle2, ShieldCheck } from 'lucide-react';
+import { Brand, GeneratedAsset, QoollineCampaign, QoollineQcResult, PipelineImage, PipelineConfig, PipelineRun, PipelineResult } from '../types';
+import { reviseGeneratedImage, adaptRevisedToFormat } from '../services/geminiService';
 import { pipelineService } from '../services/pipelineService';
 import { QOOLLINE_CAMPAIGNS, QOOLLINE_COUNTRIES, qoollineQualityCheck } from '../services/qoollineService';
 import { downloadBase64Image, downloadMultipleImages } from '../services/downloadService';
@@ -31,6 +31,11 @@ const QoollineHub: React.FC<QoollineHubProps> = ({ brand, addToHistory }) => {
   const [revisingIds, setRevisingIds] = useState<Set<string>>(new Set());
   const [expandedRevision, setExpandedRevision] = useState<string | null>(null);
   const [revisionPrompts, setRevisionPrompts] = useState<Record<string, string>>({});
+
+  // QC state
+  const [qcResults, setQcResults] = useState<Record<string, QoollineQcResult>>({});
+  const [qcRunning, setQcRunning] = useState(false);
+  const [qcProgress, setQcProgress] = useState({ done: 0, total: 0 });
 
   // Subscribe to pipeline events
   useEffect(() => {
@@ -71,6 +76,102 @@ const QoollineHub: React.FC<QoollineHubProps> = ({ brand, addToHistory }) => {
           });
         }
       });
+    }
+  }, [currentRun?.status]);
+
+  // ═══ QOOLLINE QC — Run 13-rule check on completed results, auto-revise ═══
+  const runQoollineQC = useCallback(async () => {
+    if (!currentRun) return;
+    const completedResults = currentRun.results.filter(r => r.generatedImageBase64 && r.status === 'completed');
+    if (completedResults.length === 0) return;
+
+    // Only QC master images (first format per topic group)
+    const masters = completedResults.filter(r => {
+      const baseTopic = r.topic.replace(/\s*\[[\d:]+\]\s*$/, '');
+      const group = currentRun.results.filter(gr => gr.topic.replace(/\s*\[[\d:]+\]\s*$/, '') === baseTopic);
+      return group[0]?.id === r.id; // first in group = master
+    });
+
+    setQcRunning(true);
+    setQcProgress({ done: 0, total: masters.length });
+    setLogs(prev => [...prev, `[${new Date().toLocaleTimeString('tr-TR')}] 🔍 Qoolline QC başlatılıyor — ${masters.length} master gorsel denetlenecek`]);
+
+    const MAX_RETRIES = 2;
+
+    for (let i = 0; i < masters.length; i++) {
+      const result = masters[i];
+      let imageToCheck = result.revisedImageBase64 || result.generatedImageBase64;
+      if (!imageToCheck) continue;
+
+      const campaignTypeMatch = result.topic.match(/^\[(.+?)\]/);
+      const campaignType = campaignTypeMatch ? campaignTypeMatch[1] : 'General';
+
+      setLogs(prev => [...prev, `[${new Date().toLocaleTimeString('tr-TR')}]   Denetleniyor (${i + 1}/${masters.length}): "${campaignType}"`]);
+
+      let finalQc: QoollineQcResult | null = null;
+
+      for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+        try {
+          const review = await qoollineQualityCheck(imageToCheck!, campaignType, '');
+          finalQc = review;
+
+          setLogs(prev => [...prev, `[${new Date().toLocaleTimeString('tr-TR')}]   → QC Puan: ${review.score}/10 ${review.passed ? '✓ GEÇTİ' : '✗ KALDI'}`]);
+          if (review.issues.length > 0) {
+            setLogs(prev => [...prev, `[${new Date().toLocaleTimeString('tr-TR')}]   → Sorunlar: ${review.issues.join(', ')}`]);
+          }
+
+          if (review.passed) break;
+
+          if (attempt < MAX_RETRIES && review.revisionInstruction) {
+            setLogs(prev => [...prev, `[${new Date().toLocaleTimeString('tr-TR')}]   → Revizyon (${attempt + 1}/${MAX_RETRIES})...`]);
+            try {
+              const revised = await reviseGeneratedImage(imageToCheck!, review.revisionInstruction, null);
+              imageToCheck = revised;
+              // Update master
+              setCurrentRun(prev => {
+                if (!prev) return prev;
+                return { ...prev, results: prev.results.map(r => r.id === result.id ? { ...r, revisedImageBase64: revised } : r) };
+              });
+              // Adapt siblings
+              const baseTopic = result.topic.replace(/\s*\[[\d:]+\]\s*$/, '');
+              const siblings = currentRun.results.filter(r => r.id !== result.id && r.topic.replace(/\s*\[[\d:]+\]\s*$/, '') === baseTopic && r.generatedImageBase64);
+              const masterFmt = result.topic.match(/\[([\d]+:[\d]+)\]/)?.[1];
+              for (const sib of siblings) {
+                const sibFmt = sib.topic.match(/\[([\d]+:[\d]+)\]/)?.[1];
+                try {
+                  const adapted = await adaptRevisedToFormat(revised, sibFmt || '9:16', masterFmt || '4:5', brand.logo || undefined);
+                  setCurrentRun(prev => {
+                    if (!prev) return prev;
+                    return { ...prev, results: prev.results.map(r => r.id === sib.id ? { ...r, revisedImageBase64: adapted } : r) };
+                  });
+                } catch {}
+              }
+              setLogs(prev => [...prev, `[${new Date().toLocaleTimeString('tr-TR')}]   → Revize edildi, tekrar kontrol...`]);
+            } catch {
+              setLogs(prev => [...prev, `[${new Date().toLocaleTimeString('tr-TR')}]   → Revizyon hatası, mevcut korunuyor.`]);
+              break;
+            }
+          }
+        } catch (err: any) {
+          setLogs(prev => [...prev, `[${new Date().toLocaleTimeString('tr-TR')}]   → QC hatası: ${err.message}`]);
+          break;
+        }
+      }
+
+      if (finalQc) {
+        setQcResults(prev => ({ ...prev, [result.id]: finalQc! }));
+      }
+      setQcProgress({ done: i + 1, total: masters.length });
+    }
+
+    setQcRunning(false);
+    setLogs(prev => [...prev, `[${new Date().toLocaleTimeString('tr-TR')}] 🔍 Qoolline QC tamamlandı.`]);
+  }, [currentRun, brand]);
+
+  // Auto-run QC when pipeline completes
+  useEffect(() => {
+    if (currentRun?.status === 'completed' && !qcRunning && Object.keys(qcResults).length === 0) {
+      runQoollineQC();
     }
   }, [currentRun?.status]);
 
@@ -294,6 +395,25 @@ const QoollineHub: React.FC<QoollineHubProps> = ({ brand, addToHistory }) => {
               {currentRun.completedItems > 0 && (
                 <p className="text-[10px] text-slate-500 mt-2">{currentRun.completedItems}/{currentRun.totalItems} gorsel tamamlandi</p>
               )}
+
+              {/* QC Status */}
+              {(qcRunning || Object.keys(qcResults).length > 0) && (
+                <div className="mt-3 pt-3 border-t border-lumina-800">
+                  <div className="flex items-center gap-2 mb-1">
+                    {qcRunning ? <Loader2 size={12} className="text-indigo-400 animate-spin" /> : <ShieldCheck size={12} className="text-emerald-400" />}
+                    <span className="text-[11px] text-white font-medium">Qoolline QC (13 Kural)</span>
+                  </div>
+                  {qcRunning && (
+                    <div className="w-full h-1 bg-lumina-950 rounded-full mt-1">
+                      <div className="h-full bg-indigo-400 rounded-full transition-all" style={{ width: `${qcProgress.total > 0 ? (qcProgress.done / qcProgress.total) * 100 : 0}%` }} />
+                    </div>
+                  )}
+                  <p className="text-[10px] text-slate-500 mt-1">
+                    {qcRunning ? `${qcProgress.done}/${qcProgress.total} denetleniyor...` :
+                     `${Object.values(qcResults).filter(q => q.passed).length}/${Object.keys(qcResults).length} gecti`}
+                  </p>
+                </div>
+              )}
             </div>
           )}
         </div>
@@ -364,6 +484,13 @@ const QoollineHub: React.FC<QoollineHubProps> = ({ brand, addToHistory }) => {
 
                                 {result.revisedImageBase64 && !isThisRevising && (
                                   <div className="absolute top-2 left-2 bg-lumina-gold/90 text-lumina-950 text-[9px] font-bold px-1.5 py-0.5 rounded">REVISED</div>
+                                )}
+
+                                {/* QC Badge */}
+                                {qcResults[result.id] && (
+                                  <div className={`absolute ${result.revisedImageBase64 ? 'top-8' : 'top-2'} left-2 text-[9px] font-bold px-1.5 py-0.5 rounded ${qcResults[result.id].passed ? 'bg-green-500/90 text-white' : 'bg-red-500/90 text-white'}`} title={qcResults[result.id].issues.join(', ')}>
+                                    QC {qcResults[result.id].score}/10
+                                  </div>
                                 )}
 
                                 {displayImage && !isThisRevising && (

@@ -7,10 +7,8 @@ import {
   analyzeImageStyle, decomposeToBlueprint, matchTopicsToStyles,
   generateBrandedImage, reconstructFromBlueprint, adaptMasterToFormat,
   generateDesignDirectives, generateContentPlan, decideAssetUsage,
-  reviseGeneratedImage,
   DesignDirectives, ContentPlan, AssetPlanResult
 } from './geminiService';
-import { qoollineQualityCheck } from './qoollineService';
 
 type PipelineEventType = 'step-update' | 'result-update' | 'run-update' | 'log';
 
@@ -335,51 +333,6 @@ export class PipelineService {
           );
         }
 
-        // ─── INLINE QC: Check quality + auto-revise (max 2 retries) ───
-        const MAX_QC_RETRIES = 2;
-        let qcRetryCount = 0;
-        let qcPassed = false;
-
-        for (let attempt = 0; attempt <= MAX_QC_RETRIES; attempt++) {
-          if (signal.aborted) throw new DOMException('Aborted', 'AbortError');
-
-          try {
-            this.log(`  🔍 QC kontrol ${attempt > 0 ? `(retry ${attempt})` : ''}...`);
-            // Extract campaign type from topic if template format: [Type] Core | ...
-            const campaignTypeMatch = topic.match(/^\[(.+?)\]/);
-            const campaignType = campaignTypeMatch ? campaignTypeMatch[1] : brand.name;
-            const review = await qoollineQualityCheck(masterImageBase64!, campaignType, '');
-
-            this.log(`  → QC Puan: ${review.score}/10 ${review.passed ? '✓ GEÇTİ' : '✗ KALDI'}`);
-            if (review.issues.length > 0) {
-              this.log(`  → Sorunlar: ${review.issues.join(', ')}`);
-            }
-
-            if (review.passed) {
-              qcPassed = true;
-              break;
-            }
-
-            if (attempt < MAX_QC_RETRIES && review.revisionInstruction) {
-              qcRetryCount = attempt + 1;
-              this.log(`  → Revizyon başlatılıyor (${qcRetryCount}/${MAX_QC_RETRIES})...`);
-              try {
-                masterImageBase64 = await reviseGeneratedImage(masterImageBase64!, review.revisionInstruction, null);
-                this.log(`  → Revize edildi, tekrar kontrol ediliyor...`);
-              } catch (revErr: any) {
-                this.log(`  → Revizyon hatası: ${revErr.message}, mevcut görsel korunuyor.`);
-                break;
-              }
-            } else if (attempt === MAX_QC_RETRIES) {
-              this.log(`  ⚠️ ${MAX_QC_RETRIES} retry sonrası hala düşük kalite — görsel işaretleniyor.`);
-            }
-          } catch (qcErr: any) {
-            this.log(`  → QC hatası: ${qcErr.message}, QC atlanıyor.`);
-            qcPassed = true;
-            break;
-          }
-        }
-
         this.updateResult(masterResultId, {
           status: 'completed',
           generatedImageBase64: masterImageBase64,
@@ -391,7 +344,7 @@ export class PipelineService {
           progress: Math.round((completed / totalGenerations) * 100),
         });
         this.updateRun({ completedItems: completed });
-        this.log(`  ✓ Master tamamlandı${!qcPassed ? ' (⚠️ düşük kalite)' : ''}.`);
+        this.log(`  ✓ Master tamamlandı.`);
 
       } catch (err: any) {
         this.updateResult(masterResultId, {
