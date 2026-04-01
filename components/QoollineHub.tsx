@@ -1,13 +1,13 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { Zap, Globe, Sparkles, Loader2, Download, Square, FileText, Check, XCircle, Clock, Edit2, Send, ShieldCheck } from 'lucide-react';
-import { Brand, GeneratedAsset, QoollineCampaign, QoollineQcResult, QoollineGenerationResult, PipelineImage, StyleAnalysis } from '../types';
-import { analyzeImageStyle, generateBrandedImage, reviseGeneratedImage, adaptMasterToFormat, matchTopicsToStyles } from '../services/geminiService';
-import { QOOLLINE_CAMPAIGNS, QOOLLINE_COUNTRIES, qoollineQualityCheck } from '../services/qoollineService';
+import { Zap, Globe, Sparkles, Loader2, Download, Square, FileText, Check, XCircle, Clock, Edit2, Send, Upload, RefreshCw } from 'lucide-react';
+import { Brand, GeneratedAsset, QoollineCampaign, PipelineImage, PipelineConfig, PipelineRun, PipelineResult } from '../types';
+import { reviseGeneratedImage, resizeImageToRawBase64 } from '../services/geminiService';
+import { pipelineService } from '../services/pipelineService';
+import { QOOLLINE_CAMPAIGNS, QOOLLINE_COUNTRIES } from '../services/qoollineService';
 import { downloadBase64Image, downloadMultipleImages } from '../services/downloadService';
 import CampaignFactory from './qoolline/CampaignFactory';
 import CopywritingPanel from './qoolline/CopywritingPanel';
 import CountryThemes from './qoolline/CountryThemes';
-import QoollineResults from './qoolline/QoollineResults';
 
 type QoollineTab = 'campaigns' | 'copy' | 'countries';
 
@@ -19,314 +19,121 @@ interface QoollineHubProps {
 const QoollineHub: React.FC<QoollineHubProps> = ({ brand, addToHistory }) => {
   const [activeTab, setActiveTab] = useState<QoollineTab>('campaigns');
   const [isRunning, setIsRunning] = useState(false);
-  const [results, setResults] = useState<QoollineGenerationResult[]>([]);
+  const [currentRun, setCurrentRun] = useState<PipelineRun | null>(null);
   const [logs, setLogs] = useState<string[]>([]);
   const logsEndRef = useRef<HTMLDivElement>(null);
 
-  // Country themes state
   const [selectedCountries, setSelectedCountries] = useState<Set<string>>(new Set());
   const [countryCampaignId, setCountryCampaignId] = useState(QOOLLINE_CAMPAIGNS[0].id);
 
   // Revision state
-  const [revisingIds, setRevisingIds] = useState<Set<string>>(new Set());
   const [expandedRevision, setExpandedRevision] = useState<string | null>(null);
   const [revisionPrompts, setRevisionPrompts] = useState<Record<string, string>>({});
+  const [revisionImages, setRevisionImages] = useState<Record<string, string>>({});
+  const [revisingIds, setRevisingIds] = useState<Set<string>>(new Set());
 
-  // QC state
-  const [qcResults, setQcResults] = useState<Record<string, QoollineQcResult>>({});
-  const [qcRunning, setQcRunning] = useState(false);
-
-  const log = useCallback((msg: string) => {
-    const time = new Date().toLocaleTimeString('tr-TR');
-    setLogs(prev => [...prev, `[${time}] ${msg}`]);
-  }, []);
-
-  const updateResult = useCallback((id: string, updates: Partial<QoollineGenerationResult>) => {
-    setResults(prev => prev.map(r => r.id === id ? { ...r, ...updates } : r));
+  // Subscribe to pipeline events
+  useEffect(() => {
+    const unsub = pipelineService.subscribe((event) => {
+      if (event.type === 'log') {
+        setLogs(prev => [...prev, `[${new Date(event.timestamp).toLocaleTimeString('tr-TR')}] ${event.data.message}`]);
+      } else if (event.type === 'run-update') {
+        setCurrentRun({ ...event.data.run });
+        if (event.data.run.status === 'completed' || event.data.run.status === 'failed' || event.data.run.status === 'paused') {
+          setIsRunning(false);
+        }
+      } else if (event.type === 'step-update') {
+        setCurrentRun(prev => prev ? { ...prev, steps: [...event.data.steps] } : null);
+      } else if (event.type === 'result-update') {
+        setCurrentRun(prev => prev ? { ...prev, results: [...event.data.results] } : null);
+      }
+    });
+    return unsub;
   }, []);
 
   useEffect(() => { logsEndRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [logs]);
 
-  // ═══ SIMPLE GENERATION — analyzeImageStyle + generateBrandedImage (like compare-app) ═══
+  // Save to history on completion
+  useEffect(() => {
+    if (currentRun?.status === 'completed') {
+      currentRun.results.forEach(r => {
+        const img = r.revisedImageBase64 || r.generatedImageBase64;
+        if (img) addToHistory({ id: `q-${r.id}-${Date.now()}`, url: img, promptUsed: r.topic, brandId: brand.id, createdAt: Date.now() });
+      });
+    }
+  }, [currentRun?.status]);
+
+  // ═══ PIPELINE GENERATION — no extra rules, just campaign texts as topics ═══
   const handleStartGeneration = useCallback(async (
     campaigns: QoollineCampaign[],
     formats: string[],
     referenceImages: PipelineImage[]
   ) => {
-    if (referenceImages.length === 0) {
-      alert('En az 1 referans gorsel yukleyin.');
-      return;
-    }
+    if (referenceImages.length === 0) { alert('En az 1 referans gorsel yukleyin.'); return; }
 
     setIsRunning(true);
     setLogs([]);
-    setQcResults({});
+    setCurrentRun(null);
 
-    // Initialize results
-    const initialResults: QoollineGenerationResult[] = [];
-    campaigns.forEach(campaign => {
-      formats.forEach(fmt => {
-        initialResults.push({
-          id: `${campaign.id}-${fmt}-${Date.now()}`,
-          campaignId: campaign.id,
-          campaignType: campaign.type,
-          topic: `[${campaign.type}] ${campaign.core}`,
-          format: fmt,
-          status: 'pending',
-          qcRetryCount: 0,
-        });
-      });
-    });
-    setResults(initialResults);
+    const topics = campaigns.map(c => `${c.core}. ${c.supporting}. CTA: ${c.cta}. ${c.extra}`);
 
-    const masterFormat = formats[0];
-    const adaptFormats = formats.slice(1);
-    const totalImages = campaigns.length * formats.length;
+    const config: PipelineConfig = {
+      id: `qoolline-${Date.now()}`,
+      name: `Qoolline ${new Date().toLocaleString('tr-TR')}`,
+      brandId: brand.id,
+      aspectRatio: formats[0],
+      aspectRatios: formats,
+      topics,
+      referenceImages,
+      productImages: [],
+      autoRevise: true,
+      saveAsTemplate: false,
+      createdAt: Date.now(),
+    };
 
-    log(`Uretim baslatildi: ${campaigns.length} kampanya x ${formats.length} format = ${totalImages} gorsel`);
+    await pipelineService.execute(config, brand);
+  }, [brand]);
 
-    // Step 1: Analyze ALL reference images
-    log(`${referenceImages.length} referans gorsel analiz ediliyor...`);
-    const styleMap: { id: string; analysis: StyleAnalysis; base64: string }[] = [];
+  const stopPipeline = () => { pipelineService.abort(); };
 
-    for (let i = 0; i < referenceImages.length; i++) {
-      const ref = referenceImages[i];
-      try {
-        const analysis = await analyzeImageStyle(ref.base64);
-        styleMap.push({ id: ref.id, analysis, base64: ref.base64 });
-        log(`  ✓ (${i + 1}/${referenceImages.length}) ${ref.name}: ${analysis.mood}, ${analysis.artisticStyle}`);
-      } catch (err: any) {
-        log(`  ✗ (${i + 1}/${referenceImages.length}) ${ref.name}: ${err.message}`);
-      }
-    }
-
-    if (styleMap.length === 0) {
-      log('Hicbir referans analiz edilemedi. Durduruluyor.');
-      setIsRunning(false);
-      return;
-    }
-
-    // Step 2: Match campaigns to best reference images
-    log('Kampanyalar referanslarla eslestiriliyor...');
-    const topics = campaigns.map(c => `[${c.type}] ${c.core} — ${c.notes}`);
-    let matches: { topicIndex: number; styleId: string }[];
-
-    if (styleMap.length === 1) {
-      matches = campaigns.map((_, i) => ({ topicIndex: i, styleId: styleMap[0].id }));
-      log(`  Tek referans — tum kampanyalara atandi.`);
-    } else {
-      try {
-        matches = await matchTopicsToStyles(topics, styleMap.map(s => ({ id: s.id, analysis: s.analysis })));
-        log(`  ✓ ${matches.length} eslestirme yapildi.`);
-        matches.forEach(m => {
-          const refName = referenceImages.find(r => r.id === m.styleId)?.name || m.styleId;
-          log(`    → "${campaigns[m.topicIndex].type}" ↔ ${refName}`);
-        });
-      } catch (err: any) {
-        log(`  ✗ Eslestirme hatasi: ${err.message}. Ilk referans kullaniliyor.`);
-        matches = campaigns.map((_, i) => ({ topicIndex: i, styleId: styleMap[0].id }));
-      }
-    }
-
-    // Step 3: Generate each campaign with matched reference
-    let completed = 0;
-    for (let ci = 0; ci < campaigns.length; ci++) {
-      const campaign = campaigns[ci];
-      const match = matches.find(m => m.topicIndex === ci) || { topicIndex: ci, styleId: styleMap[0].id };
-      const matchedRef = styleMap.find(s => s.id === match.styleId) || styleMap[0];
-
-      const masterResultId = initialResults.find(r => r.campaignId === campaign.id && r.format === masterFormat)?.id;
-      if (!masterResultId) continue;
-
-      const refName = referenceImages.find(r => r.id === matchedRef.id)?.name || 'referans';
-      updateResult(masterResultId, { status: 'generating' });
-      log(`🎨 Uretiliyor: "${campaign.type}" [${masterFormat}] ← ${refName}`);
-
-      const contextDescription = `${campaign.core}. ${campaign.supporting}. CTA: ${campaign.cta}. ${campaign.extra}. Referans görseldeki objeleri değiştirme, sadece marka renklerine uyarla.`;
-
-      let masterImage: string | null = null;
-
-      try {
-        masterImage = await generateBrandedImage(
-          brand,
-          matchedRef.analysis,
-          matchedRef.base64,
-          null,
-          contextDescription,
-          masterFormat
-        );
-
-        updateResult(masterResultId, { status: 'completed', imageBase64: masterImage });
-        completed++;
-        log(`  ✓ Master tamamlandi (${completed}/${totalImages})`);
-      } catch (err: any) {
-        updateResult(masterResultId, { status: 'failed', error: err.message });
-        log(`  ✗ Hata: ${err.message}`);
-        // Skip adaptations
-        adaptFormats.forEach(fmt => {
-          const adaptId = initialResults.find(r => r.campaignId === campaign.id && r.format === fmt)?.id;
-          if (adaptId) updateResult(adaptId, { status: 'failed', error: 'Master uretilemedi' });
-          completed++;
-        });
-        continue;
-      }
-
-      // Adapt to other formats — send MASTER as product image so model sees it
-      for (const fmt of adaptFormats) {
-        const adaptId = initialResults.find(r => r.campaignId === campaign.id && r.format === fmt)?.id;
-        if (!adaptId || !masterImage) continue;
-
-        updateResult(adaptId, { status: 'generating' });
-        log(`  📐 Adapt ediliyor: [${masterFormat} → ${fmt}]`);
-
-        try {
-          // Send master image as productImage — model sees both reference AND the master
-          // This ensures the adaptation matches the master's exact design
-          const adaptPrompt = `GÖREV: Bu görselin ${fmt} formatına adaptasyonunu yap.
-
-MASTER GÖRSEL (productImage olarak verildi): Bu görselin BİREBİR AYNISINI ${fmt} formatında yeniden oluştur.
-- AYNI renkler, AYNI tipografi, AYNI layout mantığı
-- AYNI metin içerikleri: "${campaign.core}", "${campaign.supporting}", CTA: "${campaign.cta}"
-- AYNI marka elementleri (logo, ikonlar, butonlar)
-- Sadece aspect ratio değişiyor: ${masterFormat} → ${fmt}
-- Elementleri ${fmt} formatına göre yeniden konumlandır ama TASARIM DİLİ AYNI kalmalı
-
-Bu bir PAKET üretimi — master ile birebir aynı tasarım dili, farklı boyut.`;
-
-          const adapted = await generateBrandedImage(
-            brand,
-            matchedRef.analysis,
-            matchedRef.base64,
-            masterImage,  // Master image as product reference
-            adaptPrompt,
-            fmt
-          );
-
-          updateResult(adaptId, { status: 'completed', imageBase64: adapted });
-          completed++;
-          log(`  ✓ Adaptasyon tamamlandi [${fmt}] (${completed}/${totalImages})`);
-        } catch (err: any) {
-          updateResult(adaptId, { status: 'failed', error: err.message });
-          log(`  ✗ Adaptasyon hatasi [${fmt}]: ${err.message}`);
-          completed++;
-        }
-      }
-    }
-
-    log(`Uretim tamamlandi! ${completed}/${totalImages} gorsel hazir.`);
-    setIsRunning(false);
-
-    // Auto QC after completion
-    log('🔍 QC baslatiliyor...');
-  }, [brand, log, updateResult]);
-
-  // Auto QC when generation finishes
-  useEffect(() => {
-    if (!isRunning && results.length > 0 && results.some(r => r.status === 'completed') && Object.keys(qcResults).length === 0 && !qcRunning) {
-      runQC();
-    }
-  }, [isRunning, results]);
-
-  const runQC = useCallback(async () => {
-    const completedResults = results.filter(r => r.status === 'completed' && r.imageBase64);
-    if (completedResults.length === 0) return;
-
-    setQcRunning(true);
-
-    for (let i = 0; i < completedResults.length; i++) {
-      const result = completedResults[i];
-      const image = result.revisedImageBase64 || result.imageBase64;
-      if (!image) continue;
-
-      log(`  Denetleniyor (${i + 1}/${completedResults.length}): "${result.campaignType}"`);
-
-      try {
-        const review = await qoollineQualityCheck(image, result.campaignType, '');
-        setQcResults(prev => ({ ...prev, [result.id]: review }));
-        log(`  → QC ${review.score}/10 ${review.passed ? '✓' : '✗'}`);
-
-        if (!review.passed && review.revisionInstruction) {
-          log(`  → Otomatik revizyon...`);
-          try {
-            const revised = await reviseGeneratedImage(image, review.revisionInstruction, null);
-            updateResult(result.id, { revisedImageBase64: revised });
-            log(`  → Revize edildi ✓`);
-          } catch {
-            log(`  → Revizyon basarisiz`);
-          }
-        }
-      } catch (err: any) {
-        log(`  → QC hatasi: ${err.message}`);
-      }
-    }
-
-    setQcRunning(false);
-    log('🔍 QC tamamlandi.');
-  }, [results, log, updateResult]);
-
-  // ═══ REVISION HANDLER (with optional image) ═══
-  const handleRevise = useCallback(async (resultId: string, instruction: string, revisionImageBase64?: string) => {
-    const result = results.find(r => r.id === resultId);
+  // ═══ REVISION ═══
+  const handleRevise = async (resultId: string) => {
+    if (!currentRun) return;
+    const prompt = revisionPrompts[resultId];
+    if (!prompt?.trim()) return;
+    const result = currentRun.results.find(r => r.id === resultId);
     if (!result) return;
-    const sourceImage = result.revisedImageBase64 || result.imageBase64;
-    if (!sourceImage) return;
+    const source = result.revisedImageBase64 || result.generatedImageBase64;
+    if (!source) return;
 
+    setRevisingIds(prev => new Set(prev).add(resultId));
     try {
-      const revised = await reviseGeneratedImage(sourceImage, instruction, revisionImageBase64 || null);
-      setResults(prev => prev.map(r => r.id === resultId ? { ...r, revisedImageBase64: revised } : r));
-      log(`✓ Revize edildi: "${result.campaignType}" [${result.format}]`);
-    } catch (err: any) {
-      console.error('Revision failed:', err);
-      log(`✗ Revizyon hatasi: ${err.message}`);
-    }
-  }, [results, log]);
-
-  // ═══ REGENERATE HANDLER — re-run same campaign with same reference ═══
-  const handleRegenerate = useCallback(async (resultId: string) => {
-    const result = results.find(r => r.id === resultId);
-    if (!result) return;
-
-    updateResult(resultId, { status: 'generating', imageBase64: undefined, revisedImageBase64: undefined });
-    log(`🔄 Yeniden uretiliyor: "${result.campaignType}" [${result.format}]`);
-
-    const campaign = QOOLLINE_CAMPAIGNS.find(c => c.id === result.campaignId);
-    if (!campaign) return;
-
-    const contextDescription = `Campaign: ${campaign.type}
-Headline: "${campaign.core}"
-Supporting: "${campaign.supporting}"
-CTA Button Text: "${campaign.cta}"
-Extra: "${campaign.extra}"
-Notes: ${campaign.notes}`;
-
-    try {
-      // Find the original reference — use first available style from initial generation
-      // For regeneration we use the same brand + context, model generates fresh
-      const newImage = await generateBrandedImage(
-        brand,
-        { composition: '', lighting: '', colorPaletteDescription: '', mood: '', textureDetails: '', cameraAngle: '', artisticStyle: '', backgroundDetails: '' },
-        null,
-        null,
-        contextDescription,
-        result.format
-      );
-      updateResult(resultId, { status: 'completed', imageBase64: newImage });
-      log(`  ✓ Yeniden uretildi [${result.format}]`);
-    } catch (err: any) {
-      updateResult(resultId, { status: 'failed', error: err.message });
-      log(`  ✗ Yeniden uretim hatasi: ${err.message}`);
-    }
-  }, [results, brand, log, updateResult]);
+      const revised = await reviseGeneratedImage(source, prompt, revisionImages[resultId] || null);
+      setCurrentRun(prev => prev ? { ...prev, results: prev.results.map(r => r.id === resultId ? { ...r, revisedImageBase64: revised } : r) } : null);
+    } catch (err: any) { console.error('Revision failed:', err); }
+    setRevisingIds(prev => { const n = new Set(prev); n.delete(resultId); return n; });
+    setRevisionPrompts(prev => ({ ...prev, [resultId]: '' }));
+    setRevisionImages(prev => ({ ...prev, [resultId]: '' }));
+    setExpandedRevision(null);
+  };
 
   const handleDownloadAll = () => {
-    const items = results
-      .filter(r => r.imageBase64 || r.revisedImageBase64)
-      .map(r => ({
-        base64: (r.revisedImageBase64 || r.imageBase64)!,
-        filename: `qoolline-${r.campaignType.replace(/[^a-zA-Z0-9]/g, '-')}-${r.format}.png`
-      }));
+    if (!currentRun) return;
+    const items = currentRun.results
+      .filter(r => r.generatedImageBase64 || r.revisedImageBase64)
+      .map(r => ({ base64: (r.revisedImageBase64 || r.generatedImageBase64)!, filename: `qoolline-${r.topic.slice(0, 30).replace(/[^a-zA-Z0-9]/g, '-')}.png` }));
     downloadMultipleImages(items);
   };
+
+  // Group results by base topic
+  const resultGroups: Record<string, PipelineResult[]> = {};
+  if (currentRun) {
+    currentRun.results.forEach(r => {
+      const base = r.topic.replace(/\s*\[[\d:]+\]\s*$/, '');
+      if (!resultGroups[base]) resultGroups[base] = [];
+      resultGroups[base].push(r);
+    });
+  }
 
   const tabs = [
     { id: 'campaigns' as QoollineTab, label: 'Kampanya', icon: Zap },
@@ -334,101 +141,155 @@ Notes: ${campaign.notes}`;
     { id: 'countries' as QoollineTab, label: 'Ulkeler', icon: Globe },
   ];
 
-  // Group results by campaign type
-  const resultGroups: Record<string, QoollineGenerationResult[]> = {};
-  results.forEach(r => {
-    if (!resultGroups[r.campaignType]) resultGroups[r.campaignType] = [];
-    resultGroups[r.campaignType].push(r);
-  });
-
   return (
     <div className="p-4 lg:p-6 h-screen overflow-y-auto">
-      {/* Header */}
       <div className="flex items-center justify-between mb-6">
         <div>
           <h2 className="text-3xl font-serif text-white flex items-center gap-3">
-            <div className="w-8 h-8 rounded-lg bg-[#F8BE00]/20 flex items-center justify-center">
-              <Zap size={18} className="text-[#F8BE00]" />
-            </div>
+            <div className="w-8 h-8 rounded-lg bg-[#F8BE00]/20 flex items-center justify-center"><Zap size={18} className="text-[#F8BE00]" /></div>
             Qoolline Hub
           </h2>
-          <p className="text-sm text-slate-400 mt-1">Referansa sadik kampanya uretimi</p>
+          <p className="text-sm text-slate-400 mt-1">Blueprint + Kreatif Beyin ile kampanya uretimi</p>
         </div>
         <div className="flex items-center gap-2">
-          {results.some(r => r.imageBase64) && (
-            <button onClick={handleDownloadAll} className="flex items-center gap-2 px-4 py-2 bg-lumina-900 border border-lumina-800 rounded-lg text-xs text-white hover:bg-lumina-800 transition-all">
-              <Download size={14} /> Tumunu Indir
-            </button>
-          )}
+          {isRunning && <button onClick={stopPipeline} className="flex items-center gap-2 px-3 py-2 bg-red-500/20 border border-red-500/30 rounded-lg text-xs text-red-400"><Square size={12} /> Durdur</button>}
+          {currentRun?.results.some(r => r.generatedImageBase64) && <button onClick={handleDownloadAll} className="flex items-center gap-2 px-4 py-2 bg-lumina-900 border border-lumina-800 rounded-lg text-xs text-white"><Download size={14} /> Tumunu Indir</button>}
         </div>
       </div>
 
       <div className="grid grid-cols-12 gap-6">
-        {/* Left Panel */}
         <div className="col-span-12 lg:col-span-4">
           <div className="bg-lumina-900 border border-lumina-800 rounded-xl p-4">
             <div className="flex gap-1 mb-5 bg-lumina-950 rounded-lg p-1">
-              {tabs.map(tab => {
-                const Icon = tab.icon;
-                const isActive = activeTab === tab.id;
-                return (
-                  <button key={tab.id} onClick={() => setActiveTab(tab.id)} className={`flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-xs font-medium transition-all ${isActive ? 'bg-lumina-gold/10 text-lumina-gold' : 'text-slate-500 hover:text-white'}`}>
-                    <Icon size={12} />
-                    {tab.label}
-                  </button>
-                );
-              })}
+              {tabs.map(tab => { const Icon = tab.icon; return (
+                <button key={tab.id} onClick={() => setActiveTab(tab.id)} className={`flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-xs font-medium transition-all ${activeTab === tab.id ? 'bg-lumina-gold/10 text-lumina-gold' : 'text-slate-500 hover:text-white'}`}>
+                  <Icon size={12} />{tab.label}
+                </button>
+              ); })}
             </div>
-
-            {activeTab === 'campaigns' && (
-              <CampaignFactory brand={brand} onStartGeneration={handleStartGeneration} isRunning={isRunning} />
-            )}
+            {activeTab === 'campaigns' && <CampaignFactory brand={brand} onStartGeneration={handleStartGeneration} isRunning={isRunning} />}
             {activeTab === 'copy' && <CopywritingPanel />}
             {activeTab === 'countries' && (
-              <div className="space-y-4">
-                <CountryThemes
-                  selectedCountries={selectedCountries}
-                  onToggleCountry={(id) => setSelectedCountries(prev => { const n = new Set(prev); if (n.has(id)) n.delete(id); else n.add(id); return n; })}
-                  selectedCampaignId={countryCampaignId}
-                  onCampaignChange={setCountryCampaignId}
-                />
-                <button disabled={true} className="w-full py-3 bg-[#F8BE00] text-[#201C1D] rounded-xl font-bold text-sm opacity-30 cursor-not-allowed">
-                  <Globe size={16} className="inline mr-2" />
-                  Yakinda...
-                </button>
-              </div>
+              <CountryThemes selectedCountries={selectedCountries} onToggleCountry={(id) => setSelectedCountries(prev => { const n = new Set(prev); if (n.has(id)) n.delete(id); else n.add(id); return n; })} selectedCampaignId={countryCampaignId} onCampaignChange={setCountryCampaignId} />
             )}
           </div>
 
-          {/* Status */}
-          {(isRunning || qcRunning) && (
+          {/* Pipeline Steps */}
+          {currentRun && (
             <div className="mt-4 bg-lumina-900 border border-lumina-800 rounded-xl p-4">
-              <div className="flex items-center gap-2">
-                <Loader2 size={14} className={`animate-spin ${qcRunning ? 'text-indigo-400' : 'text-lumina-gold'}`} />
-                <span className="text-xs text-white">{qcRunning ? 'QC Denetleniyor...' : 'Uretim devam ediyor...'}</span>
+              <h3 className="text-xs font-medium text-white mb-3">Pipeline</h3>
+              <div className="space-y-2">
+                {currentRun.steps.map(step => (
+                  <div key={step.id} className="flex items-center gap-2">
+                    <div className={`w-5 h-5 rounded-full flex items-center justify-center text-[9px] ${step.status === 'completed' ? 'bg-emerald-500/20 text-emerald-400' : step.status === 'running' ? 'bg-blue-500/20 text-blue-400' : step.status === 'failed' ? 'bg-red-500/20 text-red-400' : 'bg-slate-800 text-slate-600'}`}>
+                      {step.status === 'completed' ? <Check size={10} /> : step.status === 'running' ? <Loader2 size={10} className="animate-spin" /> : step.status === 'failed' ? <XCircle size={10} /> : <Clock size={10} />}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-[11px] text-white truncate">{step.name}</p>
+                      {step.status === 'running' && step.progress > 0 && <div className="w-full h-1 bg-lumina-950 rounded-full mt-1"><div className="h-full bg-blue-400 rounded-full transition-all" style={{ width: `${step.progress}%` }} /></div>}
+                    </div>
+                  </div>
+                ))}
               </div>
-              <p className="text-[10px] text-slate-500 mt-1">
-                {results.filter(r => r.status === 'completed').length}/{results.length} tamamlandi
-              </p>
+              {currentRun.completedItems > 0 && <p className="text-[10px] text-slate-500 mt-2">{currentRun.completedItems}/{currentRun.totalItems} gorsel</p>}
             </div>
           )}
         </div>
 
-        {/* Right Panel — Results */}
         <div className="col-span-12 lg:col-span-8">
-          {results.length > 0 ? (
+          {currentRun && currentRun.results.some(r => r.generatedImageBase64 || r.status !== 'pending') ? (
             <div className="space-y-4">
-              <QoollineResults results={results} onRevise={handleRevise} onRegenerate={handleRegenerate} logs={logs} />
+              {Object.entries(resultGroups).map(([baseTopic, group]) => (
+                <div key={baseTopic} className="border border-lumina-800 rounded-xl overflow-hidden bg-lumina-950">
+                  <div className="px-3 py-2.5 bg-lumina-900/50 border-b border-lumina-800 flex items-center justify-between">
+                    <div className="min-w-0">
+                      <p className="text-xs text-white font-medium truncate" title={baseTopic}>{baseTopic}</p>
+                      <span className="text-[10px] text-slate-500">{group.length} boyut</span>
+                    </div>
+                    <button onClick={() => group.forEach(r => { const img = r.revisedImageBase64 || r.generatedImageBase64; if (img) downloadBase64Image(img, `qoolline-${baseTopic.slice(0, 20)}.png`); })} className="p-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-slate-400 hover:text-white transition-all"><Download size={12} /></button>
+                  </div>
+                  <div className="p-3">
+                    <div className="flex gap-3">
+                      {group.map(result => {
+                        const displayImage = result.revisedImageBase64 || result.generatedImageBase64;
+                        const isThisRevising = revisingIds.has(result.id);
+                        const isExpanded = expandedRevision === result.id;
+                        const fmtMatch = result.topic.match(/\[([\d]+:[\d]+)\]/);
+                        const formatLabel = fmtMatch ? fmtMatch[1] : null;
+                        const arMatch = formatLabel?.match(/(\d+):(\d+)/);
+                        const arW = arMatch ? parseInt(arMatch[1]) : 1;
+                        const arH = arMatch ? parseInt(arMatch[2]) : 1;
+
+                        return (
+                          <div key={result.id} className="flex-1 min-w-0">
+                            {formatLabel && <div className="flex items-center justify-center mb-2"><span className="text-[10px] font-bold text-lumina-gold bg-lumina-gold/10 px-2 py-0.5 rounded-full">{formatLabel}</span></div>}
+                            <div className="relative rounded-lg overflow-hidden bg-lumina-900 border border-lumina-800 mx-auto" style={{ aspectRatio: `${arW}/${arH}`, maxHeight: arH > arW ? '400px' : '280px' }}>
+                              {isThisRevising ? (
+                                <div className="w-full h-full flex items-center justify-center bg-lumina-900/50">
+                                  {displayImage && <img src={`data:image/png;base64,${displayImage}`} className="w-full h-full object-cover opacity-30 absolute inset-0" />}
+                                  <div className="text-center relative z-10"><Loader2 size={24} className="text-lumina-gold animate-spin mx-auto" /><p className="text-xs text-lumina-gold mt-2">Revize ediliyor...</p></div>
+                                </div>
+                              ) : displayImage ? (
+                                <img src={`data:image/png;base64,${displayImage}`} className="w-full h-full object-cover" loading="lazy" />
+                              ) : (
+                                <div className="w-full h-full flex items-center justify-center">
+                                  {result.status === 'generating' ? <div className="text-center"><Loader2 size={24} className="text-lumina-gold animate-spin mx-auto" /><p className="text-xs text-slate-500 mt-2">Uretiliyor...</p></div>
+                                  : result.status === 'failed' ? <div className="text-center px-3"><XCircle size={24} className="text-red-400 mx-auto" /><p className="text-xs text-red-400 mt-2">{result.error || 'Hata'}</p></div>
+                                  : <Clock size={24} className="text-slate-600" />}
+                                </div>
+                              )}
+                              {result.revisedImageBase64 && !isThisRevising && <div className="absolute top-2 left-2 bg-lumina-gold/90 text-lumina-950 text-[9px] font-bold px-1.5 py-0.5 rounded">REVISED</div>}
+                              {displayImage && !isThisRevising && (
+                                <div className="absolute inset-0 bg-black/60 opacity-0 hover:opacity-100 transition-opacity flex items-center justify-center gap-2">
+                                  <button onClick={() => downloadBase64Image(displayImage, `qoolline.png`)} className="bg-white/20 backdrop-blur-sm text-white px-3 py-1.5 rounded-lg text-xs flex items-center gap-1"><Download size={12} /> Indir</button>
+                                  <button onClick={() => setExpandedRevision(isExpanded ? null : result.id)} className="bg-lumina-gold/30 backdrop-blur-sm text-lumina-gold px-3 py-1.5 rounded-lg text-xs flex items-center gap-1"><Edit2 size={12} /> Revize</button>
+                                </div>
+                              )}
+                            </div>
+                            {isExpanded && (
+                              <div className="mt-2 p-2 bg-lumina-950 rounded-lg border border-lumina-800 space-y-1.5">
+                                <div className="flex gap-1">
+                                  <input type="text" value={revisionPrompts[result.id] || ''} onChange={e => setRevisionPrompts(prev => ({ ...prev, [result.id]: e.target.value }))} onKeyDown={e => e.key === 'Enter' && handleRevise(result.id)} placeholder="Nasil degissin?" className="flex-1 bg-lumina-900 border border-lumina-800 rounded px-2 py-1.5 text-[11px] text-white focus:outline-none placeholder-slate-600" autoFocus />
+                                  <button onClick={() => handleRevise(result.id)} disabled={!revisionPrompts[result.id]?.trim()} className="px-2 py-1.5 bg-lumina-gold/20 text-lumina-gold rounded disabled:opacity-30"><Send size={10} /></button>
+                                </div>
+                                <div className="flex items-center gap-2">
+                                  <label className="flex items-center gap-1 px-2 py-1 bg-lumina-900 border border-lumina-800 rounded cursor-pointer hover:border-lumina-gold/50 transition-colors">
+                                    <Upload size={10} className="text-slate-500" />
+                                    <span className="text-[9px] text-slate-500">{revisionImages[result.id] ? 'Gorsel yuklendi ✓' : 'Referans ekle'}</span>
+                                    <input type="file" accept="image/*" onChange={async e => { const f = e.target.files?.[0]; if (f) { try { const b = await resizeImageToRawBase64(f, 1200); setRevisionImages(prev => ({ ...prev, [result.id]: b })); } catch {} } }} className="hidden" />
+                                  </label>
+                                  {revisionImages[result.id] && <button onClick={() => setRevisionImages(prev => ({ ...prev, [result.id]: '' }))} className="text-[9px] text-red-400">Kaldir</button>}
+                                </div>
+                              </div>
+                            )}
+                            <p className="text-[10px] text-slate-500 text-center mt-1">
+                              {isThisRevising ? 'Revize ediliyor...' : result.revisedImageBase64 ? 'Revize edildi' : result.status === 'completed' ? 'Tamamlandi' : result.status === 'failed' ? 'Basarisiz' : result.status === 'generating' ? 'Uretiliyor' : 'Bekliyor'}
+                            </p>
+                          </div>
+                        );
+                      })}
+                    </div>
+                    {group.length > 1 && group.some(r => r.generatedImageBase64) && (
+                      <div className="flex items-center justify-center mt-2 gap-2"><div className="h-px flex-1 bg-lumina-800" /><span className="text-[9px] text-slate-600 px-2">ayni tasarim dili</span><div className="h-px flex-1 bg-lumina-800" /></div>
+                    )}
+                  </div>
+                </div>
+              ))}
+
+              {/* Logs */}
+              <div className="bg-lumina-900 border border-lumina-800 rounded-xl p-4">
+                <h3 className="text-xs text-white font-medium mb-2 flex items-center gap-2"><FileText size={12} className="text-slate-400" /> Loglar</h3>
+                <div className="bg-lumina-950 rounded-lg p-3 h-40 overflow-y-auto font-mono text-[10px]">
+                  {logs.map((log, i) => <div key={i} className={`py-0.5 ${log.includes('✓') ? 'text-emerald-400' : log.includes('✗') || log.includes('hata') ? 'text-red-400' : log.includes('Beyin') ? 'text-purple-400' : log.includes('Blueprint') ? 'text-blue-400' : 'text-slate-400'}`}>{log}</div>)}
+                  <div ref={logsEndRef} />
+                </div>
+              </div>
             </div>
           ) : (
             <div className="bg-lumina-900 border border-lumina-800 rounded-xl p-12 text-center">
-              <div className="w-16 h-16 mx-auto mb-4 rounded-2xl bg-[#F8BE00]/10 flex items-center justify-center">
-                <Zap size={28} className="text-[#F8BE00]" />
-              </div>
+              <div className="w-16 h-16 mx-auto mb-4 rounded-2xl bg-[#F8BE00]/10 flex items-center justify-center"><Zap size={28} className="text-[#F8BE00]" /></div>
               <h3 className="text-lg font-serif text-white mb-2">Qoolline Kampanya Motoru</h3>
-              <p className="text-sm text-slate-500 max-w-md mx-auto">
-                Referans gorsel yukle, kampanya sablonlarini sec, boyutlari belirle. Referansa sadik kalarak marka renkleri ve kampanya metinleriyle uretim yapilir.
-              </p>
+              <p className="text-sm text-slate-500 max-w-md mx-auto">Referans gorsel yukle, kampanya sec, boyut belirle. Pipeline: Blueprint ayristirma → Kreatif Beyin → Gorsel uretim → Adaptasyon.</p>
             </div>
           )}
         </div>
