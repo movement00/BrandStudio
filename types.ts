@@ -395,7 +395,6 @@ export interface PipelineConfig {
   saveAsTemplate: boolean;
   templateFolderId?: string;
   creativeTone?: string;       // Kreatif yaklaşım: kurumsal, esprili, eğlenceli, samimi, vb.
-  mandatoryRules?: string;     // Brand-specific mandatory rules injected into generation prompt
   createdAt: number;
 }
 

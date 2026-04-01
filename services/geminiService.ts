@@ -355,8 +355,7 @@ export const reconstructFromBlueprint = async (
   contentPlan?: ContentPlan | null,
   directives?: DesignDirectives | null,
   assetPlan?: AssetPlanResult | null,
-  carouselPrevSlideBase64?: string | null,
-  mandatoryRules?: string | null,
+  carouselPrevSlideBase64?: string | null
 ): Promise<string> => {
   if (window.aistudio && window.aistudio.hasSelectedApiKey) {
     const hasKey = await window.aistudio.hasSelectedApiKey();
@@ -477,18 +476,6 @@ export const reconstructFromBlueprint = async (
     Dominant (%60): ${brandColors.dominant}
     İkincil (%30): ${brandColors.secondary}
     Vurgu (%10): ${brandColors.accent}`}
-
-    ${mandatoryRules ? `
-    ███████████████████████████████████████████████████████████
-    ⚠️  ZORUNLU MARKA KURALLARI — BU KURALLAR HER ŞEYDEN ÖNCELİKLİ
-    ███████████████████████████████████████████████████████████
-    Aşağıdaki kurallar KESİNLİKLE uygulanmalıdır. Bu kuralları ihlal eden
-    herhangi bir tasarım REDDEDİLECEKTİR. Her bir kuralı tek tek kontrol et:
-
-    ${mandatoryRules}
-
-    ███████████████████████████████████████████████████████████
-    ` : ''}
 
     ═══════════════════════════════════════════════════════════
     KRİTİK KURALLAR

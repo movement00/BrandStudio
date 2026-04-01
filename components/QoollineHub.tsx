@@ -207,31 +207,6 @@ const QoollineHub: React.FC<QoollineHubProps> = ({ brand, addToHistory }) => {
       autoRevise: true,
       saveAsTemplate: false,
       creativeTone: 'Professional, clean, mobile-first, performance-focused',
-      mandatoryRules: `KURAL 1 — TEK MESAJ: Her görselde TEK bir ana mesaj olmalı. Birden fazla yarışan mesaj YASAK. Eğer birden fazla mesaj varsa tasarımı DURDUR ve tek mesaja indir.
-
-KURAL 2 — LOGO: Qoolline logosu/adı YÜKSEK KONTRASTLI olmalı. Logo ASLA gradient, düşük kontrastlı veya karışık arka plan üzerine konmamalı. Logo okunaksızsa tasarım REDDEDİLİR.
-
-KURAL 3 — MARKA RENKLERİ: SADECE şu renkler kullanılacak: Sarı #F8BE00, Siyah #201C1D, Mor #6B63FF, Yeşil #00CC9B. Başka renk KULLANMA.
-
-KURAL 4 — CTA BUTON FORMATI: Call-to-action KELİMESİ KELİMESİNE verilen CTA metnini içeren yuvarlak köşeli dikdörtgen BUTON olarak gösterilmeli. Düz metin CTA YASAK. Buton rengi: #F8BE00 veya #00CC9B.
-
-KURAL 5 — MOBİL OKUNURLUK: Tüm metinler mobil ekranda rahatça okunabilir boyutta olmalı. Küçük veya düşük kontrastlı metin YASAK.
-
-KURAL 6 — AI YAPAY İZLERİ YOK: Bozuk eller, yüzler, metinler, objeler YASAK. Profesyonel tasarım kalitesinde olmalı, AI üretimi gibi görünmemeli.
-
-KURAL 7 — METİN DOĞRULUĞU: Tüm metinler doğru yazılmalı. Placeholder, anlamsız, kırık metin YASAK. Verilen kampanya metinlerini KELİMESİ KELİMESİNE kullan.
-
-KURAL 8 — GEREKSİZ DEKORASYON YOK: Mesaja hizmet etmeyen noktalar, dalgalar, soyut şekiller YASAK. Her görsel eleman bir amaca hizmet etmeli.
-
-KURAL 9 — ÜRÜN GÖRÜNÜRLüğü: Qoolline uygulaması veya telefonda app görüntüsü net şekilde gösterilmeli.
-
-KURAL 10 — METİN-ARKA PLAN KONTRASTI: Her metin elemanı arka planına karşı yeterli kontrasta sahip olmalı. Okunması zor metin YASAK.
-
-KURAL 11 — BASİT YAPI: Kısa metin blokları, kolay taranabilir. Uzun, parçalı metin YASAK.
-
-KURAL 12 — İNSAN-ÜRÜN ETKİLEŞİMİ: Mümkün olduğunda gerçek kullanım senaryosu göster (telefon kullanan kişi).
-
-KURAL 13 — FORMAT TUTARLILIĞI: Tasarım 1:1, 4:5, 9:16 formatlarına adapte edildiğinde mesajını kaybetmemeli.`,
       createdAt: Date.now(),
     };
 
