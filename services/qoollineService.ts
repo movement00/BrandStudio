@@ -1,6 +1,163 @@
-import { Brand, QoollineCampaign, QoollineCountryTheme, CopyVariant, QoollineQcResult } from '../types';
+import { Brand, QoollineCampaign, QoollineCountryTheme, CopyVariant, QoollineQcResult, DesignBlueprint, BlueprintLayer } from '../types';
 import { getApiKey } from './geminiService';
 import { GoogleGenAI } from '@google/genai';
+
+// ═══ Qoolline brand colors ═══
+const QOOLLINE_COLORS = {
+  yellow: '#F8BE00',
+  black: '#201C1D',
+  purple: '#6B63FF',
+  grey: '#737485',
+  yellowLight10: '#FFFAEA',
+  yellowLight8: '#FEF5D7',
+  purpleTint: '#E9E8FF',
+  green: '#00CC9B',
+};
+
+const QOOLLINE_ALLOWED_COLORS = Object.values(QOOLLINE_COLORS);
+
+// ═══ BLUEPRINT PREPROCESSOR — Enforce 13 rules at data level ═══
+export function preprocessBlueprintForQoolline(
+  blueprint: DesignBlueprint,
+  campaign: QoollineCampaign
+): DesignBlueprint {
+  const bp = JSON.parse(JSON.stringify(blueprint)) as DesignBlueprint; // deep clone
+
+  // ─── KURAL 3: Force brand colors in color system ───
+  bp.colorSystem.dominant = QOOLLINE_COLORS.yellow;
+  bp.colorSystem.secondary = QOOLLINE_COLORS.black;
+  bp.colorSystem.accent = QOOLLINE_COLORS.green;
+  bp.colorSystem.textPrimary = '#FFFFFF';
+  bp.colorSystem.textSecondary = QOOLLINE_COLORS.grey;
+
+  // ─── KURAL 3: Force canvas background to brand color ───
+  bp.canvas.backgroundColor = QOOLLINE_COLORS.black;
+
+  // ─── Process layers ───
+  const processedLayers: BlueprintLayer[] = [];
+  let hasCtaButton = false;
+  let mainMessageCount = 0;
+
+  for (const layer of bp.layers) {
+    const l = { ...layer, style: { ...layer.style } };
+
+    // ─── KURAL 2: Logo layer — force high contrast ───
+    if (l.type === 'logo') {
+      // Ensure logo has high contrast: white/yellow text on dark bg, or dark on light bg
+      l.style.color = '#FFFFFF';
+      l.style.backgroundColor = QOOLLINE_COLORS.black;
+      l.style.opacity = '100%';
+      // Remove any gradient that might reduce contrast
+      l.style.gradient = undefined;
+      l.style.blur = undefined;
+      l.content = `Qoolline — HIGH CONTRAST, sharp, clearly readable logo on solid ${QOOLLINE_COLORS.black} background. NO gradient behind logo.`;
+      processedLayers.push(l);
+      continue;
+    }
+
+    // ─── KURAL 4: Find CTA layer and force button format ───
+    if (l.type === 'text' && !hasCtaButton) {
+      const isCta = l.content.toLowerCase().includes('cta') ||
+                    l.content.toLowerCase().includes('get esim') ||
+                    l.content.toLowerCase().includes('download') ||
+                    l.content.toLowerCase().includes('explore') ||
+                    l.content.toLowerCase().includes('buy') ||
+                    l.style.borderRadius === 'full' ||
+                    l.style.borderRadius === 'lg';
+
+      if (isCta) {
+        // Force button format
+        l.content = campaign.cta;
+        l.style.backgroundColor = QOOLLINE_COLORS.green;
+        l.style.color = '#FFFFFF';
+        l.style.borderRadius = 'lg';
+        l.style.fontWeight = 'bold';
+        l.style.fontSize = l.style.fontSize || 'md';
+        l.style.textAlign = 'center';
+        hasCtaButton = true;
+        processedLayers.push(l);
+        continue;
+      }
+    }
+
+    // ─── KURAL 8: Remove unnecessary decorations ───
+    if (l.type === 'decoration') {
+      const isUseful = l.content.toLowerCase().includes('line') ||
+                       l.content.toLowerCase().includes('divider') ||
+                       l.content.toLowerCase().includes('border');
+      if (!isUseful) {
+        // Skip this layer — remove decorative clutter
+        continue;
+      }
+    }
+
+    // ─── KURAL 1: Limit text layers for single message ───
+    if (l.type === 'text') {
+      mainMessageCount++;
+      if (mainMessageCount > 4) {
+        // Skip excessive text layers — enforce single message rule
+        continue;
+      }
+    }
+
+    // ─── KURAL 3: Force brand colors on all layers ───
+    if (l.style.color && !QOOLLINE_ALLOWED_COLORS.includes(l.style.color) && l.style.color !== '#FFFFFF' && l.style.color !== '#000000') {
+      // Replace off-brand color with nearest Qoolline color
+      l.style.color = QOOLLINE_COLORS.yellow;
+    }
+    if (l.style.backgroundColor && !QOOLLINE_ALLOWED_COLORS.includes(l.style.backgroundColor) && l.style.backgroundColor !== '#FFFFFF' && l.style.backgroundColor !== '#000000' && l.style.backgroundColor !== 'transparent') {
+      l.style.backgroundColor = QOOLLINE_COLORS.black;
+    }
+
+    // ─── KURAL 5: Enforce minimum readable font size ───
+    if (l.type === 'text' && l.style.fontSize === 'xs') {
+      l.style.fontSize = 'sm'; // Upgrade tiny text to readable
+    }
+
+    // ─── KURAL 10: Ensure text-background contrast ───
+    if (l.type === 'text') {
+      const bgColor = l.style.backgroundColor || bp.canvas.backgroundColor;
+      const isDarkBg = bgColor === QOOLLINE_COLORS.black || bgColor === '#000000' || bgColor === '#201C1D';
+      if (isDarkBg && (l.style.color === QOOLLINE_COLORS.black || l.style.color === '#000000')) {
+        l.style.color = '#FFFFFF'; // Fix: dark text on dark bg
+      }
+      if (!isDarkBg && l.style.color === '#FFFFFF') {
+        l.style.color = QOOLLINE_COLORS.black; // Fix: white text on light bg
+      }
+    }
+
+    processedLayers.push(l);
+  }
+
+  // ─── KURAL 4: If no CTA button found, inject one ───
+  if (!hasCtaButton) {
+    processedLayers.push({
+      id: 'qoolline-cta-injected',
+      type: 'text',
+      content: campaign.cta,
+      position: { x: 'center', y: '85%', anchor: 'center' },
+      size: { width: '50%', height: 'auto' },
+      style: {
+        fontWeight: 'bold',
+        fontSize: 'md',
+        textAlign: 'center',
+        color: '#FFFFFF',
+        backgroundColor: QOOLLINE_COLORS.green,
+        borderRadius: 'lg',
+      },
+      zIndex: 90,
+    });
+  }
+
+  bp.layers = processedLayers;
+
+  // ─── KURAL 5 & 11: Typography enforcement ───
+  bp.typography.headingStyle = 'Bold, clean sans-serif (Inter/Montserrat), large size, high contrast, mobile-readable';
+  bp.typography.bodyStyle = 'Regular weight, clean sans-serif, md size minimum, high contrast';
+  bp.typography.accentStyle = 'Bold, inside rounded-rectangle button, high contrast color';
+
+  return bp;
+}
 
 function getAI(): GoogleGenAI {
   const key = getApiKey();

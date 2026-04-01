@@ -9,6 +9,7 @@ import {
   generateDesignDirectives, generateContentPlan, decideAssetUsage,
   DesignDirectives, ContentPlan, AssetPlanResult
 } from './geminiService';
+import { preprocessBlueprintForQoolline, QOOLLINE_CAMPAIGNS } from './qoollineService';
 
 type PipelineEventType = 'step-update' | 'result-update' | 'run-update' | 'log';
 
@@ -310,8 +311,19 @@ export class PipelineService {
 
       try {
         if (blueprint) {
+          // If mandatoryRules set (e.g. Qoolline), preprocess blueprint at data level
+          let finalBlueprint = blueprint;
+          if (config.mandatoryRules) {
+            // Find matching campaign for this topic
+            const campaignTypeMatch = topic.match(/^\[(.+?)\]/);
+            const campaignType = campaignTypeMatch ? campaignTypeMatch[1] : '';
+            const campaign = QOOLLINE_CAMPAIGNS.find(c => c.type === campaignType) || QOOLLINE_CAMPAIGNS[0];
+            finalBlueprint = preprocessBlueprintForQoolline(blueprint, campaign);
+            this.log(`  → Blueprint 13 kurala göre preprocess edildi (${finalBlueprint.layers.length} katman)`);
+          }
+
           masterImageBase64 = await reconstructFromBlueprint(
-            blueprint,
+            finalBlueprint,
             brand,
             topic,
             masterFormat,
