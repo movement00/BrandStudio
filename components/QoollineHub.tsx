@@ -279,20 +279,59 @@ Bu bir PAKET üretimi — master ile birebir aynı tasarım dili, farklı boyut.
     log('🔍 QC tamamlandi.');
   }, [results, log, updateResult]);
 
-  // ═══ REVISION HANDLER ═══
-  const handleRevise = useCallback(async (resultId: string, instruction: string) => {
+  // ═══ REVISION HANDLER (with optional image) ═══
+  const handleRevise = useCallback(async (resultId: string, instruction: string, revisionImageBase64?: string) => {
     const result = results.find(r => r.id === resultId);
     if (!result) return;
     const sourceImage = result.revisedImageBase64 || result.imageBase64;
     if (!sourceImage) return;
 
     try {
-      const revised = await reviseGeneratedImage(sourceImage, instruction, null);
+      const revised = await reviseGeneratedImage(sourceImage, instruction, revisionImageBase64 || null);
       setResults(prev => prev.map(r => r.id === resultId ? { ...r, revisedImageBase64: revised } : r));
+      log(`✓ Revize edildi: "${result.campaignType}" [${result.format}]`);
     } catch (err: any) {
       console.error('Revision failed:', err);
+      log(`✗ Revizyon hatasi: ${err.message}`);
     }
-  }, [results]);
+  }, [results, log]);
+
+  // ═══ REGENERATE HANDLER — re-run same campaign with same reference ═══
+  const handleRegenerate = useCallback(async (resultId: string) => {
+    const result = results.find(r => r.id === resultId);
+    if (!result) return;
+
+    updateResult(resultId, { status: 'generating', imageBase64: undefined, revisedImageBase64: undefined });
+    log(`🔄 Yeniden uretiliyor: "${result.campaignType}" [${result.format}]`);
+
+    const campaign = QOOLLINE_CAMPAIGNS.find(c => c.id === result.campaignId);
+    if (!campaign) return;
+
+    const contextDescription = `Campaign: ${campaign.type}
+Headline: "${campaign.core}"
+Supporting: "${campaign.supporting}"
+CTA Button Text: "${campaign.cta}"
+Extra: "${campaign.extra}"
+Notes: ${campaign.notes}`;
+
+    try {
+      // Find the original reference — use first available style from initial generation
+      // For regeneration we use the same brand + context, model generates fresh
+      const newImage = await generateBrandedImage(
+        brand,
+        { composition: '', lighting: '', colorPaletteDescription: '', mood: '', textureDetails: '', cameraAngle: '', artisticStyle: '', backgroundDetails: '' },
+        null,
+        null,
+        contextDescription,
+        result.format
+      );
+      updateResult(resultId, { status: 'completed', imageBase64: newImage });
+      log(`  ✓ Yeniden uretildi [${result.format}]`);
+    } catch (err: any) {
+      updateResult(resultId, { status: 'failed', error: err.message });
+      log(`  ✗ Yeniden uretim hatasi: ${err.message}`);
+    }
+  }, [results, brand, log, updateResult]);
 
   const handleDownloadAll = () => {
     const items = results
@@ -394,7 +433,7 @@ Bu bir PAKET üretimi — master ile birebir aynı tasarım dili, farklı boyut.
         <div className="col-span-12 lg:col-span-8">
           {results.length > 0 ? (
             <div className="space-y-4">
-              <QoollineResults results={results} onRevise={handleRevise} logs={logs} />
+              <QoollineResults results={results} onRevise={handleRevise} onRegenerate={handleRegenerate} logs={logs} />
             </div>
           ) : (
             <div className="bg-lumina-900 border border-lumina-800 rounded-xl p-12 text-center">
