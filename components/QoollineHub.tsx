@@ -142,22 +142,7 @@ const QoollineHub: React.FC<QoollineHubProps> = ({ brand, addToHistory }) => {
       updateResult(masterResultId, { status: 'generating' });
       log(`🎨 Uretiliyor: "${campaign.type}" [${masterFormat}] ← ${refName}`);
 
-      const contextDescription = `Campaign: ${campaign.type}
-Headline: "${campaign.core}"
-Supporting: "${campaign.supporting}"
-CTA Button Text: "${campaign.cta}"
-Extra: "${campaign.extra}"
-Notes: ${campaign.notes}
-
-IMPORTANT RULES:
-- CTA must be a BUTTON (rounded rectangle with "${campaign.cta}" text inside)
-- Use brand colors prominently: Yellow #F8BE00 (dominant ~40%), Purple #6B63FF (secondary ~25%), Black #201C1D, Green #00CC9B (CTA only)
-- Keep the EXACT same layout, composition, and visual elements as the reference image
-- Only change: texts (to campaign texts above) and colors (to brand palette)
-- Logo must be high contrast, never on gradient
-- Single clear message — "${campaign.core}" is the hero text
-- All text must be spelled EXACTLY as given above, no gibberish
-- Professional quality, mobile-readable`;
+      const contextDescription = `${campaign.core}. ${campaign.supporting}. CTA: ${campaign.cta}. ${campaign.extra}`;
 
       let masterImage: string | null = null;
 
