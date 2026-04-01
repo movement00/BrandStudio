@@ -151,7 +151,7 @@ IMPORTANT RULES:
         continue;
       }
 
-      // Adapt to other formats
+      // Adapt to other formats — send MASTER as product image so model sees it
       for (const fmt of adaptFormats) {
         const adaptId = initialResults.find(r => r.campaignId === campaign.id && r.format === fmt)?.id;
         if (!adaptId || !masterImage) continue;
@@ -160,13 +160,25 @@ IMPORTANT RULES:
         log(`  📐 Adapt ediliyor: [${masterFormat} → ${fmt}]`);
 
         try {
-          // Use simple generate with same reference but different aspect ratio
+          // Send master image as productImage — model sees both reference AND the master
+          // This ensures the adaptation matches the master's exact design
+          const adaptPrompt = `GÖREV: Bu görselin ${fmt} formatına adaptasyonunu yap.
+
+MASTER GÖRSEL (productImage olarak verildi): Bu görselin BİREBİR AYNISINI ${fmt} formatında yeniden oluştur.
+- AYNI renkler, AYNI tipografi, AYNI layout mantığı
+- AYNI metin içerikleri: "${campaign.core}", "${campaign.supporting}", CTA: "${campaign.cta}"
+- AYNI marka elementleri (logo, ikonlar, butonlar)
+- Sadece aspect ratio değişiyor: ${masterFormat} → ${fmt}
+- Elementleri ${fmt} formatına göre yeniden konumlandır ama TASARIM DİLİ AYNI kalmalı
+
+Bu bir PAKET üretimi — master ile birebir aynı tasarım dili, farklı boyut.`;
+
           const adapted = await generateBrandedImage(
             brand,
             style,
             referenceImages[0].base64,
-            null,
-            contextDescription + `\n\nIMPORTANT: This is the ${fmt} format version. Adapt the layout for ${fmt} while keeping the SAME design language, colors, and message.`,
+            masterImage,  // Master image as product reference
+            adaptPrompt,
             fmt
           );
 
