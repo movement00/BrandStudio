@@ -8,6 +8,7 @@ import BulkGenerator from './components/BulkGenerator';
 import PipelineDashboard from './components/PipelineDashboard';
 import ContentScout from './components/ContentScout';
 import CarouselGenerator from './components/CarouselGenerator';
+import QoollineHub from './components/QoollineHub';
 import { ViewState, Brand, SavedTemplate, GeneratedAsset, TemplateFolder } from './types';
 import { hasApiKey, setApiKey, getApiKey } from './services/geminiService';
 import { downloadBase64Image } from './services/downloadService';
@@ -17,21 +18,65 @@ const INITIAL_BRANDS: Brand[] = [
   {
     id: '1',
     name: 'Qoolline',
-    industry: 'Telekomünikasyon & E-SIM',
-    description: 'Qoolline, dünyayı birbirine bağlayan, seyahatseverler ve global işletmeler için kesintisiz, uygun fiyatlı ve anında aktif olan yeni nesil dijital e-SIM çözümleri sunar.',
+    industry: 'International eSIM & Travel Connectivity',
+    description: `Qoolline is a next-generation international eSIM provider offering seamless, affordable, and instantly activated digital connectivity for modern travellers and global businesses. Coverage across 175+ destinations with no roaming fees. Simple app-based setup with instant activation.
+
+CREATIVE RULES (MANDATORY):
+1. SINGLE MESSAGE: Every creative must have ONE clear main message. Multiple competing messages = reject.
+2. LOGO: Must always be high-contrast, sharp, instantly recognizable. NEVER place logo on gradients or low-contrast backgrounds.
+3. BRAND COLORS: Strictly use brand palette — Yellow #F8BE00, Black #201C1D, Purple #6B63FF, Green #00CC9B. Off-brand colors = reject.
+4. CTA FORMAT: Call-to-action MUST be in BUTTON format (rounded rectangle with text). Plain text CTA = reject.
+5. MOBILE READABILITY: All text must be readable on mobile. Tiny or low-contrast text = reject.
+6. NO AI ARTIFACTS: No distorted hands, faces, text, or objects. Must look like professional design, not AI output.
+7. TEXT ACCURACY: All text spelled correctly. No placeholder text, no gibberish, no broken words.
+8. NO UNNECESSARY DECORATION: No dots, waves, abstract shapes that don't serve the message. Decorative clutter = reject.
+9. PRODUCT VISIBILITY: App interface or product must be clearly shown. Use REAL Qoolline app UI screenshots.
+10. TEXT-BACKGROUND CONTRAST: Text must have sufficient contrast. Hard to read = reject.
+11. SIMPLE STRUCTURE: Short text blocks, easy to scan. No long fragmented text.
+12. HUMAN-PRODUCT INTERACTION: When possible, show real usage scenarios (person using phone with Qoolline).
+13. FORMAT CONSISTENCY: Must work across 1:1, 4:5, 9:16 without message loss.
+
+DESIGN PRINCIPLES:
+- Performance-focused approach: clear problem → solution → CTA flow
+- Visual hierarchy must be immediately obvious
+- Single main message per creative — never compete with yourself
+- Real app UI strengthens trust (no fake mockups)
+- Color and typography balanced while maintaining brand identity
+
+TARGET SCENARIOS:
+- Scenario 1: UK to Europe travelers — emphasize travel and international usage
+- Scenario 2: Non-EU users — general solution-focused communication
+
+COPYWRITING PILLARS:
+- No Roaming Fees
+- Instant Activation
+- Seamless Connectivity
+- Trust & Reliability
+- Global Coverage (175+ destinations)`,
     logo: null,
     primaryColor: '#F8BE00',
     secondaryColor: '#201C1D',
-    tone: 'Yenilikçi, Global, Teknolojik, Hızlı, Kullanıcı Dostu',
+    tone: 'Innovative, Global, Tech-forward, Fast, User-friendly, Premium yet Accessible',
     outputLanguage: 'en',
+    instagram: 'qoolline',
+    website: 'www.qoolline.com',
     palette: [
       { name: 'Brand Yellow', hex: '#F8BE00' },
       { name: 'Brand Black', hex: '#201C1D' },
-      { name: 'Tech Blue', hex: '#6B63FF' },
-      { name: 'Subtext Grey', hex: '#737485' },
-      { name: 'Brand Yellow %10', hex: '#FFFAEA' },
-      { name: 'Brand Yellow %8', hex: '#FEF5D7' },
-      { name: 'Tech Blue Tint', hex: '#E9E8FF' }
+      { name: 'Tertiary Brand Color (Purple)', hex: '#6B63FF' },
+      { name: 'Brand Black - Subtitle', hex: '#737485' },
+      { name: 'Brand Yellow - 10%', hex: '#FFFAEA' },
+      { name: 'Brand Yellow - 8%', hex: '#FEF5D7' },
+      { name: 'Tertiary Tint', hex: '#E9E8FF' },
+      { name: 'Sweet Green (CTA Accent)', hex: '#00CC9B' }
+    ],
+    slogans: [
+      'Stop Paying Roaming Fees',
+      'Seamless Connectivity for Modern Travellers',
+      'Travel connected. Your eSIM, ready in minutes',
+      'The World at Your Fingertips, Wherever You Travel',
+      'Welcome to Seamless Travel Connectivity',
+      '10% off your Travel eSIM — Use code WELCOME'
     ]
   },
   {
@@ -289,6 +334,13 @@ function App() {
         return <BulkGenerator brands={brands} addToHistory={addToHistory} />;
       case 'carousel':
         return <CarouselGenerator brands={brands} addToHistory={addToHistory} />;
+      case 'qoolline':
+        return (
+          <QoollineHub
+            brand={brands.find(b => b.name === 'Qoolline') || brands[0]}
+            addToHistory={addToHistory}
+          />
+        );
       case 'library':
         return (
           <StyleLibrary 

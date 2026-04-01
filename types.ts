@@ -182,7 +182,63 @@ export interface GeneratedAsset {
   createdAt: number;
 }
 
-export type ViewState = 'dashboard' | 'brands' | 'analyzer' | 'library' | 'bulk' | 'pipeline' | 'scout' | 'carousel';
+export type ViewState = 'dashboard' | 'brands' | 'analyzer' | 'library' | 'bulk' | 'pipeline' | 'scout' | 'carousel' | 'qoolline';
+
+// ══════════════════════════════════════════════════
+// Qoolline Hub Types
+// ══════════════════════════════════════════════════
+
+export interface QoollineCampaign {
+  id: string;
+  type: string;
+  core: string;
+  supporting: string;
+  cta: string;
+  extra: string;
+  notes: string;
+}
+
+export interface QoollineCountryTheme {
+  id: string;
+  country: string;
+  emoji: string;
+  localizedMessage: string;
+  visualKeywords: string[];
+  targetScenario: string;
+}
+
+export interface CopyVariant {
+  id: string;
+  campaignType: string;
+  headline: string;
+  supporting: string;
+  cta: string;
+  extra: string;
+  reasoning: string;
+}
+
+export interface QoollineQcResult {
+  score: number;
+  passed: boolean;
+  issues: string[];
+  revisionInstruction: string | null;
+  rulesChecked: string[];
+}
+
+export interface QoollineGenerationResult {
+  id: string;
+  campaignId: string;
+  campaignType: string;
+  topic: string;
+  format: string;
+  status: 'pending' | 'generating' | 'qc-checking' | 'revising' | 'completed' | 'failed';
+  imageBase64?: string;
+  revisedImageBase64?: string;
+  qc?: QoollineQcResult;
+  qcRetryCount: number;
+  error?: string;
+  copyVariant?: CopyVariant;
+}
 
 // ══════════════════════════════════════════════════
 // Carousel Types
