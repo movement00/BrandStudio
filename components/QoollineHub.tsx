@@ -142,7 +142,7 @@ const QoollineHub: React.FC<QoollineHubProps> = ({ brand, addToHistory }) => {
       updateResult(masterResultId, { status: 'generating' });
       log(`🎨 Uretiliyor: "${campaign.type}" [${masterFormat}] ← ${refName}`);
 
-      const contextDescription = `${campaign.core}. ${campaign.supporting}. CTA: ${campaign.cta}. ${campaign.extra}`;
+      const contextDescription = `${campaign.core}. ${campaign.supporting}. CTA: ${campaign.cta}. ${campaign.extra}. Referans görseldeki objeleri değiştirme, sadece marka renklerine uyarla.`;
 
       let masterImage: string | null = null;
 
