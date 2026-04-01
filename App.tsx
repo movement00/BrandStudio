@@ -19,57 +19,11 @@ const INITIAL_BRANDS: Brand[] = [
     id: '1',
     name: 'Qoolline',
     industry: 'International eSIM & Travel Connectivity',
-    description: `Qoolline is a next-generation international eSIM provider offering seamless, affordable, and instantly activated digital connectivity for modern travellers and global businesses. Coverage across 175+ destinations with no roaming fees. Simple app-based setup with instant activation.
+    description: `Qoolline is a next-generation international eSIM provider for modern travellers and global businesses. 175+ destinations, no roaming fees, instant app-based activation.
 
-CREATIVE RULES (MANDATORY):
-1. SINGLE MESSAGE: Every creative must have ONE clear main message. Multiple competing messages = reject.
-2. LOGO: Must always be high-contrast, sharp, instantly recognizable. NEVER place logo on gradients or low-contrast backgrounds.
-3. BRAND COLORS: Strictly use brand palette — Yellow #F8BE00, Black #201C1D, Purple #6B63FF, Green #00CC9B. Off-brand colors = reject.
-4. CTA FORMAT: Call-to-action MUST be in BUTTON format (rounded rectangle with text). Plain text CTA = reject.
-5. MOBILE READABILITY: All text must be readable on mobile. Tiny or low-contrast text = reject.
-6. NO AI ARTIFACTS: No distorted hands, faces, text, or objects. Must look like professional design, not AI output.
-7. TEXT ACCURACY: All text spelled correctly. No placeholder text, no gibberish, no broken words.
-8. NO UNNECESSARY DECORATION: No dots, waves, abstract shapes that don't serve the message. Decorative clutter = reject.
-9. PRODUCT VISIBILITY: App interface or product must be clearly shown. Use REAL Qoolline app UI screenshots.
-10. TEXT-BACKGROUND CONTRAST: Text must have sufficient contrast. Hard to read = reject.
-11. SIMPLE STRUCTURE: Short text blocks, easy to scan. No long fragmented text.
-12. HUMAN-PRODUCT INTERACTION: When possible, show real usage scenarios (person using phone with Qoolline).
-13. FORMAT CONSISTENCY: Must work across 1:1, 4:5, 9:16 without message loss.
+Key brand elements: Yellow #F8BE00 (primary), Purple #6B63FF (accent), Black #201C1D (text), Green #00CC9B (CTA). Single clear message per creative. CTA as button format. Logo always high-contrast. Professional quality, mobile-readable text. All text must be spelled correctly.
 
-DESIGN PRINCIPLES:
-- Performance-focused approach: clear problem → solution → CTA flow
-- Visual hierarchy must be immediately obvious
-- Single main message per creative — never compete with yourself
-- Real app UI strengthens trust (no fake mockups)
-- Color and typography balanced while maintaining brand identity
-
-TARGET SCENARIOS:
-- Scenario 1: UK to Europe travelers — emphasize travel and international usage
-- Scenario 2: Non-EU users — general solution-focused communication
-
-COLOR DISTRIBUTION (MANDATORY):
-- Brand Yellow #F8BE00 — DOMINANT color (~40%), used for backgrounds, key sections, highlights
-- Purple #6B63FF — SECONDARY color (~25%), used for accents, badges, supporting elements, gradients
-- Brand Black #201C1D — used for text and dark sections (~15%)
-- Sweet Green #00CC9B — CTA buttons only (~5%)
-- Remaining: white, grey, tints for contrast and breathing room
-- Purple MUST be visible and prominent in every design — not just a small accent
-
-REFERENCE IMAGE FIDELITY (CRITICAL):
-- The generated image must look ALMOST IDENTICAL to the reference image
-- Keep the SAME layout, composition, visual elements, object placement
-- Only CHANGE: text content (to match campaign), colors (to match brand palette above)
-- Do NOT redesign or reimagine the layout — PRESERVE the reference structure exactly
-- If reference has a phone mockup → keep phone mockup in same position
-- If reference has icons at bottom → keep icons at bottom in same style
-- If reference has a person → keep person in same pose and position
-
-COPYWRITING PILLARS:
-- No Roaming Fees
-- Instant Activation
-- Seamless Connectivity
-- Trust & Reliability
-- Global Coverage (175+ destinations)`,
+Messaging: Stop Paying Roaming Fees / Seamless Connectivity / Instant Activation / Global Coverage.`,
     logo: null,
     primaryColor: '#F8BE00',
     secondaryColor: '#201C1D',
