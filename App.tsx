@@ -18,28 +18,23 @@ const INITIAL_BRANDS: Brand[] = [
   {
     id: '1',
     name: 'Qoolline',
-    industry: 'International eSIM & Travel Connectivity',
-    description: `Qoolline is a next-generation international eSIM provider for modern travellers and global businesses. 175+ destinations, no roaming fees, instant app-based activation.
-
-Key brand elements: Yellow #F8BE00 (primary), Purple #6B63FF (accent), Black #201C1D (text), Green #00CC9B (CTA). Single clear message per creative. CTA as button format. Logo always high-contrast. Professional quality, mobile-readable text. All text must be spelled correctly.
-
-Messaging: Stop Paying Roaming Fees / Seamless Connectivity / Instant Activation / Global Coverage.`,
+    industry: 'Telekomünikasyon & E-SIM',
+    description: 'Qoolline, dünyayı birbirine bağlayan, seyahatseverler ve global işletmeler için kesintisiz, uygun fiyatlı ve anında aktif olan yeni nesil dijital e-SIM çözümleri sunar.',
     logo: null,
     primaryColor: '#F8BE00',
     secondaryColor: '#201C1D',
-    tone: 'Innovative, Global, Tech-forward, Fast, User-friendly, Premium yet Accessible',
+    tone: 'Yenilikçi, Global, Teknolojik, Hızlı, Kullanıcı Dostu',
     outputLanguage: 'en',
     instagram: 'qoolline',
     website: 'www.qoolline.com',
     palette: [
       { name: 'Brand Yellow', hex: '#F8BE00' },
       { name: 'Brand Black', hex: '#201C1D' },
-      { name: 'Tertiary Brand Color (Purple)', hex: '#6B63FF' },
-      { name: 'Brand Black - Subtitle', hex: '#737485' },
-      { name: 'Brand Yellow - 10%', hex: '#FFFAEA' },
-      { name: 'Brand Yellow - 8%', hex: '#FEF5D7' },
-      { name: 'Tertiary Tint', hex: '#E9E8FF' },
-      { name: 'Sweet Green (CTA Accent)', hex: '#00CC9B' }
+      { name: 'Tech Blue', hex: '#6B63FF' },
+      { name: 'Subtext Grey', hex: '#737485' },
+      { name: 'Brand Yellow %10', hex: '#FFFAEA' },
+      { name: 'Brand Yellow %8', hex: '#FEF5D7' },
+      { name: 'Tech Blue Tint', hex: '#E9E8FF' }
     ],
     slogans: [
       'Stop Paying Roaming Fees',
