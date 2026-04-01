@@ -1,13 +1,13 @@
-import React, { useState, useCallback } from 'react';
-import { Zap, FileText, Globe, Sparkles, Loader2, Download } from 'lucide-react';
-import { Brand, GeneratedAsset, QoollineCampaign, QoollineGenerationResult, PipelineImage } from '../types';
-import { generateBrandedImage, reviseGeneratedImage, adaptMasterToFormat, analyzeImageStyle } from '../services/geminiService';
-import { QOOLLINE_CAMPAIGNS, QOOLLINE_COUNTRIES, qoollineQualityCheck, generateCountryPrompt } from '../services/qoollineService';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { Zap, Globe, Sparkles, Loader2, Download, Square, FileText, RotateCcw, Check, XCircle, Clock, Edit2, Send, CheckCircle2 } from 'lucide-react';
+import { Brand, GeneratedAsset, QoollineCampaign, PipelineImage, PipelineConfig, PipelineRun, PipelineResult } from '../types';
+import { reviseGeneratedImage, adaptRevisedToFormat, reviewCreativeQuality } from '../services/geminiService';
+import { pipelineService } from '../services/pipelineService';
+import { QOOLLINE_CAMPAIGNS, QOOLLINE_COUNTRIES, qoollineQualityCheck } from '../services/qoollineService';
 import { downloadBase64Image, downloadMultipleImages } from '../services/downloadService';
 import CampaignFactory from './qoolline/CampaignFactory';
 import CopywritingPanel from './qoolline/CopywritingPanel';
 import CountryThemes from './qoolline/CountryThemes';
-import QoollineResults from './qoolline/QoollineResults';
 
 type QoollineTab = 'campaigns' | 'copy' | 'countries';
 
@@ -19,265 +19,164 @@ interface QoollineHubProps {
 const QoollineHub: React.FC<QoollineHubProps> = ({ brand, addToHistory }) => {
   const [activeTab, setActiveTab] = useState<QoollineTab>('campaigns');
   const [isRunning, setIsRunning] = useState(false);
-  const [results, setResults] = useState<QoollineGenerationResult[]>([]);
+  const [currentRun, setCurrentRun] = useState<PipelineRun | null>(null);
   const [logs, setLogs] = useState<string[]>([]);
+  const logsEndRef = useRef<HTMLDivElement>(null);
 
   // Country themes state
   const [selectedCountries, setSelectedCountries] = useState<Set<string>>(new Set());
   const [countryCampaignId, setCountryCampaignId] = useState(QOOLLINE_CAMPAIGNS[0].id);
 
-  const log = useCallback((msg: string) => {
-    const time = new Date().toLocaleTimeString('tr-TR');
-    setLogs(prev => [...prev, `[${time}] ${msg}`]);
+  // Revision state
+  const [revisingIds, setRevisingIds] = useState<Set<string>>(new Set());
+  const [expandedRevision, setExpandedRevision] = useState<string | null>(null);
+  const [revisionPrompts, setRevisionPrompts] = useState<Record<string, string>>({});
+
+  // Subscribe to pipeline events
+  useEffect(() => {
+    const unsub = pipelineService.subscribe((event) => {
+      if (event.type === 'log') {
+        setLogs(prev => [...prev, `[${new Date(event.timestamp).toLocaleTimeString('tr-TR')}] ${event.data.message}`]);
+      } else if (event.type === 'run-update') {
+        setCurrentRun({ ...event.data.run });
+        if (event.data.run.status === 'completed' || event.data.run.status === 'failed' || event.data.run.status === 'paused') {
+          setIsRunning(false);
+        }
+      } else if (event.type === 'step-update') {
+        setCurrentRun(prev => prev ? { ...prev, steps: [...event.data.steps] } : null);
+      } else if (event.type === 'result-update') {
+        setCurrentRun(prev => prev ? { ...prev, results: [...event.data.results] } : null);
+      }
+    });
+    return unsub;
   }, []);
 
-  const updateResult = useCallback((id: string, updates: Partial<QoollineGenerationResult>) => {
-    setResults(prev => prev.map(r => r.id === id ? { ...r, ...updates } : r));
-  }, []);
+  // Auto-scroll logs
+  useEffect(() => {
+    logsEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [logs]);
 
-  // ═══ CAMPAIGN GENERATION ═══
+  // Save completed results to history
+  useEffect(() => {
+    if (currentRun?.status === 'completed') {
+      currentRun.results.forEach(r => {
+        const imgData = r.revisedImageBase64 || r.generatedImageBase64;
+        if (imgData) {
+          addToHistory({
+            id: `qoolline-${r.id}-${Date.now()}`,
+            url: imgData,
+            promptUsed: r.topic,
+            brandId: brand.id,
+            createdAt: Date.now(),
+          });
+        }
+      });
+    }
+  }, [currentRun?.status]);
+
+  // ═══ CAMPAIGN GENERATION — Uses full pipeline (blueprint + brain + reconstruct) ═══
   const handleStartGeneration = useCallback(async (
     campaigns: QoollineCampaign[],
     formats: string[],
     referenceImages: PipelineImage[]
   ) => {
+    if (referenceImages.length === 0) {
+      alert('En az 1 referans gorsel yukleyin. Pipeline blueprint ayristirma icin referans gerektirir.');
+      return;
+    }
+
     setIsRunning(true);
     setLogs([]);
+    setCurrentRun(null);
 
-    // Initialize results
-    const initialResults: QoollineGenerationResult[] = [];
-    campaigns.forEach(campaign => {
-      formats.forEach(fmt => {
-        initialResults.push({
-          id: `${campaign.id}-${fmt}-${Date.now()}`,
-          campaignId: campaign.id,
-          campaignType: campaign.type,
-          topic: `[${campaign.type}] ${campaign.core} | ${campaign.supporting} | CTA: ${campaign.cta} | ${campaign.extra}`,
-          format: fmt,
-          status: 'pending',
-          qcRetryCount: 0,
-        });
-      });
-    });
-    setResults(initialResults);
+    // Format campaigns as template topics: [Type] Core | Supporting | CTA: cta | Extra
+    const topics = campaigns.map(c =>
+      `[${c.type}] ${c.core} | ${c.supporting} | CTA: ${c.cta} | ${c.extra}`
+    );
 
-    log(`Pipeline baslatildi: ${campaigns.length} kampanya x ${formats.length} format = ${initialResults.length} gorsel`);
+    const config: PipelineConfig = {
+      id: `qoolline-${Date.now()}`,
+      name: `Qoolline Kampanya ${new Date().toLocaleString('tr-TR')}`,
+      brandId: brand.id,
+      aspectRatio: formats[0],
+      aspectRatios: formats,
+      topics,
+      referenceImages,
+      productImages: [],
+      autoRevise: true,
+      saveAsTemplate: false,
+      creativeTone: 'professional, clean, mobile-first',
+      createdAt: Date.now(),
+    };
 
-    // Analyze reference style if provided
-    let refStyleAnalysis = null;
-    if (referenceImages.length > 0) {
-      log('Referans stil analiz ediliyor...');
-      try {
-        refStyleAnalysis = await analyzeImageStyle(referenceImages[0].base64);
-        log(`Stil analizi tamamlandi: ${refStyleAnalysis.mood}, ${refStyleAnalysis.artisticStyle}`);
-      } catch (err: any) {
-        log(`Stil analizi hatasi: ${err.message}`);
-      }
-    }
+    await pipelineService.execute(config, brand);
+  }, [brand]);
 
-    const masterFormat = formats[0];
-    const adaptFormats = formats.slice(1);
-
-    for (const campaign of campaigns) {
-      const masterResultId = initialResults.find(r => r.campaignId === campaign.id && r.format === masterFormat)?.id;
-      if (!masterResultId) continue;
-
-      // ─── Generate Master ───
-      updateResult(masterResultId, { status: 'generating' });
-      log(`Uretiliyor: "${campaign.type}" [${masterFormat}]`);
-
-      let masterImage: string | null = null;
-      const prompt = `Create a professional social media banner for Qoolline (eSIM brand).
-
-CAMPAIGN: ${campaign.type}
-HEADLINE: "${campaign.core}"
-SUPPORTING TEXT: "${campaign.supporting}"
-CTA BUTTON: "${campaign.cta}"
-ADDITIONAL: "${campaign.extra}"
-CREATIVE NOTES: ${campaign.notes}
-
-BRAND RULES:
-- Brand Yellow #F8BE00 as primary, Brand Black #201C1D as secondary
-- Purple accent #6B63FF, Green CTA accent #00CC9B
-- CTA must be a BUTTON (rounded rectangle), not plain text
-- Single clear message, no competing messages
-- Logo must be high contrast, never on gradients
-- Mobile-first readability, short text blocks
-- Show Qoolline app UI or phone with app
-- Professional quality, no AI artifacts
-- No decorative clutter (dots, waves, abstract shapes)
-
-Aspect ratio: ${masterFormat}
-Generate a polished, ready-to-publish banner.`;
-
-      try {
-        if (refStyleAnalysis && referenceImages.length > 0) {
-          masterImage = await generateBrandedImage(
-            brand, refStyleAnalysis, referenceImages[0].base64, null,
-            prompt, masterFormat
-          );
-        } else {
-          masterImage = await generateBrandedImage(
-            brand,
-            { composition: 'centered', lighting: 'studio', colorPaletteDescription: 'yellow and black', mood: 'professional', textureDetails: 'clean', cameraAngle: 'front', artisticStyle: 'modern banner', backgroundDetails: 'gradient' },
-            '', null, prompt, masterFormat
-          );
-        }
-        log(`  Master uretildi.`);
-      } catch (err: any) {
-        updateResult(masterResultId, { status: 'failed', error: err.message });
-        log(`  Master hatasi: ${err.message}`);
-        // Skip adaptations
-        adaptFormats.forEach(fmt => {
-          const adaptId = initialResults.find(r => r.campaignId === campaign.id && r.format === fmt)?.id;
-          if (adaptId) updateResult(adaptId, { status: 'failed', error: 'Master uretilemedi' });
-        });
-        continue;
-      }
-
-      // ─── Inline QC ───
-      const MAX_RETRIES = 2;
-      let qcRetryCount = 0;
-
-      for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
-        updateResult(masterResultId, { status: 'qc-checking', imageBase64: masterImage! });
-        log(`  QC kontrol ${attempt > 0 ? `(retry ${attempt})` : ''}...`);
-
-        try {
-          const qcResult = await qoollineQualityCheck(masterImage!, campaign.type, campaign.notes);
-          log(`  QC Puan: ${qcResult.score}/10 ${qcResult.passed ? '✓ GECTI' : '✗ KALDI'}`);
-          if (qcResult.issues.length > 0) log(`  Sorunlar: ${qcResult.issues.join(', ')}`);
-
-          if (qcResult.passed) {
-            updateResult(masterResultId, { status: 'completed', imageBase64: masterImage!, qc: qcResult, qcRetryCount });
-            break;
-          }
-
-          if (attempt < MAX_RETRIES && qcResult.revisionInstruction) {
-            qcRetryCount = attempt + 1;
-            updateResult(masterResultId, { status: 'revising' });
-            log(`  Revizyon baslatiyor (${qcRetryCount}/${MAX_RETRIES})...`);
-            try {
-              masterImage = await reviseGeneratedImage(masterImage!, qcResult.revisionInstruction, null);
-              log(`  Revize edildi, tekrar kontrol ediliyor...`);
-            } catch {
-              log(`  Revizyon hatasi, mevcut gorsel korunuyor.`);
-              updateResult(masterResultId, { status: 'completed', imageBase64: masterImage!, qc: qcResult, qcRetryCount });
-              break;
-            }
-          } else {
-            log(`  ${MAX_RETRIES} retry sonrasi hala dusuk kalite.`);
-            updateResult(masterResultId, { status: 'completed', imageBase64: masterImage!, qc: qcResult, qcRetryCount });
-          }
-        } catch (qcErr: any) {
-          log(`  QC hatasi: ${qcErr.message}, QC atlaniyor.`);
-          updateResult(masterResultId, { status: 'completed', imageBase64: masterImage! });
-          break;
-        }
-      }
-
-      // ─── Adapt to other formats ───
-      for (const fmt of adaptFormats) {
-        const adaptId = initialResults.find(r => r.campaignId === campaign.id && r.format === fmt)?.id;
-        if (!adaptId || !masterImage) continue;
-
-        updateResult(adaptId, { status: 'generating' });
-        log(`  Adapt ediliyor: [${masterFormat} -> ${fmt}]`);
-
-        try {
-          const adapted = await adaptMasterToFormat(
-            masterImage,
-            { canvas: { aspectRatio: masterFormat, backgroundColor: brand.primaryColor, mood: 'professional', style: 'banner' }, layout: { type: 'single-column', alignment: 'center', padding: '5%', gutterSize: '2%', visualFlow: '' }, layers: [], typography: { headingStyle: '', bodyStyle: '', accentStyle: '', hierarchy: '' }, colorSystem: { dominant: brand.primaryColor, secondary: brand.secondaryColor, accent: '#6B63FF', textPrimary: '#FFFFFF', textSecondary: '#CCCCCC', distribution: '' }, compositionNotes: '', formatAdjustments: {} },
-            brand, campaign.core, fmt, masterFormat, null
-          );
-          updateResult(adaptId, { status: 'completed', imageBase64: adapted });
-          log(`  ✓ Adaptasyon tamamlandi [${fmt}]`);
-        } catch (err: any) {
-          updateResult(adaptId, { status: 'failed', error: err.message });
-          log(`  ✗ Adaptasyon hatasi [${fmt}]: ${err.message}`);
-        }
-      }
-    }
-
-    log('Pipeline tamamlandi!');
-    setIsRunning(false);
-  }, [brand, log, updateResult]);
-
-  // ═══ COUNTRY GENERATION ═══
+  // ═══ COUNTRY GENERATION — Also uses pipeline ═══
   const handleStartCountryGeneration = useCallback(async () => {
     if (selectedCountries.size === 0) return;
-    const campaign = QOOLLINE_CAMPAIGNS.find(c => c.id === countryCampaignId)!;
-    const countries = QOOLLINE_COUNTRIES.filter(c => selectedCountries.has(c.id));
+    alert('Ulke temali uretim icin Kampanya sekmesinden referans gorsel yukleyip pipeline kullanin. Konulara ulke isimlerini ekleyin.');
+  }, [selectedCountries]);
 
-    setIsRunning(true);
-    setLogs([]);
+  const stopPipeline = () => { pipelineService.abort(); };
 
-    const initialResults: QoollineGenerationResult[] = [];
-    countries.forEach(country => {
-      initialResults.push({
-        id: `country-${country.id}-${Date.now()}`,
-        campaignId: campaign.id,
-        campaignType: `${campaign.type} — ${country.emoji} ${country.country}`,
-        topic: `${country.localizedMessage} (${campaign.core})`,
-        format: '4:5',
-        status: 'pending',
-        qcRetryCount: 0,
-      });
-    });
-    setResults(initialResults);
+  // ═══ REVISION — Revise master then adapt siblings ═══
+  const handleRevise = useCallback(async (resultId: string) => {
+    const prompt = revisionPrompts[resultId];
+    if (!currentRun || !prompt?.trim()) return;
 
-    log(`Ulke temali uretim: ${countries.length} ulke, kampanya: ${campaign.type}`);
-
-    for (let i = 0; i < countries.length; i++) {
-      const country = countries[i];
-      const resultId = initialResults[i].id;
-
-      updateResult(resultId, { status: 'generating' });
-      log(`Uretiliyor: ${country.emoji} ${country.country}...`);
-
-      try {
-        const prompt = await generateCountryPrompt(country, campaign, brand);
-        log(`  Prompt olusturuldu, gorsel uretiliyor...`);
-
-        const image = await generateBrandedImage(
-          brand,
-          { composition: 'centered', lighting: 'natural', colorPaletteDescription: 'yellow and black', mood: 'travel', textureDetails: 'clean', cameraAngle: 'front', artisticStyle: 'modern travel ad', backgroundDetails: country.visualKeywords.join(', ') },
-          '', null, prompt, '4:5'
-        );
-
-        updateResult(resultId, { status: 'completed', imageBase64: image });
-        log(`  ✓ ${country.country} tamamlandi`);
-      } catch (err: any) {
-        updateResult(resultId, { status: 'failed', error: err.message });
-        log(`  ✗ ${country.country} hatasi: ${err.message}`);
-      }
-    }
-
-    log('Ulke temali uretim tamamlandi!');
-    setIsRunning(false);
-  }, [brand, selectedCountries, countryCampaignId, log, updateResult]);
-
-  // ═══ REVISION HANDLER ═══
-  const handleRevise = useCallback(async (resultId: string, instruction: string) => {
-    const result = results.find(r => r.id === resultId);
+    const result = currentRun.results.find(r => r.id === resultId);
     if (!result) return;
-    const sourceImage = result.revisedImageBase64 || result.imageBase64;
+    const sourceImage = result.revisedImageBase64 || result.generatedImageBase64;
     if (!sourceImage) return;
 
+    // Find format from topic
+    const fmtMatch = result.topic.match(/\[([\d]+:[\d]+)\]/);
+    const aspectRatio = fmtMatch ? fmtMatch[1] : undefined;
+
+    // Find siblings (same base topic, different format)
+    const baseTopic = result.topic.replace(/\s*\[.*?\]\s*$/, '');
+    const siblings = currentRun.results.filter(r => r.id !== resultId && r.topic.replace(/\s*\[.*?\]\s*$/, '') === baseTopic);
+
+    const allIds = [resultId, ...siblings.map(s => s.id)];
+    setRevisingIds(new Set(allIds));
+
     try {
-      const revised = await reviseGeneratedImage(sourceImage, instruction, null);
-      setResults(prev => prev.map(r => r.id === resultId ? { ...r, revisedImageBase64: revised } : r));
+      const revised = await reviseGeneratedImage(sourceImage, prompt, null, aspectRatio, brand.logo || undefined);
+      setCurrentRun(prev => {
+        if (!prev) return prev;
+        return { ...prev, results: prev.results.map(r => r.id === resultId ? { ...r, revisedImageBase64: revised } : r) };
+      });
+      setRevisingIds(prev => { const n = new Set(prev); n.delete(resultId); return n; });
+
+      // Adapt siblings
+      for (const sibling of siblings) {
+        const sibFmt = sibling.topic.match(/\[([\d]+:[\d]+)\]/)?.[1];
+        try {
+          const adapted = await adaptRevisedToFormat(revised, sibFmt || '9:16', aspectRatio || '4:5', brand.logo || undefined);
+          setCurrentRun(prev => {
+            if (!prev) return prev;
+            return { ...prev, results: prev.results.map(r => r.id === sibling.id ? { ...r, revisedImageBase64: adapted } : r) };
+          });
+        } catch {}
+        setRevisingIds(prev => { const n = new Set(prev); n.delete(sibling.id); return n; });
+      }
     } catch (err: any) {
       console.error('Revision failed:', err);
     }
-  }, [results]);
+
+    setRevisingIds(new Set());
+    setRevisionPrompts(prev => ({ ...prev, [resultId]: '' }));
+    setExpandedRevision(null);
+  }, [currentRun, revisionPrompts, brand]);
 
   const handleDownloadAll = () => {
-    const items = results
-      .filter(r => r.imageBase64 || r.revisedImageBase64)
+    if (!currentRun) return;
+    const items = currentRun.results
+      .filter(r => r.generatedImageBase64 || r.revisedImageBase64)
       .map(r => ({
-        base64: (r.revisedImageBase64 || r.imageBase64)!,
-        filename: `qoolline-${r.campaignType.replace(/[^a-zA-Z0-9]/g, '-')}-${r.format}.png`
+        base64: (r.revisedImageBase64 || r.generatedImageBase64)!,
+        filename: `qoolline-${r.topic.slice(0, 40).replace(/[^a-zA-Z0-9]/g, '-')}.png`
       }));
     downloadMultipleImages(items);
   };
@@ -287,6 +186,16 @@ Generate a polished, ready-to-publish banner.`;
     { id: 'copy' as QoollineTab, label: 'Kopya', icon: Sparkles },
     { id: 'countries' as QoollineTab, label: 'Ulkeler', icon: Globe },
   ];
+
+  // Group results by base topic (strip format label)
+  const resultGroups: Record<string, PipelineResult[]> = {};
+  if (currentRun) {
+    currentRun.results.forEach(r => {
+      const base = r.topic.replace(/\s*\[[\d:]+\]\s*$/, '');
+      if (!resultGroups[base]) resultGroups[base] = [];
+      resultGroups[base].push(r);
+    });
+  }
 
   return (
     <div className="p-4 lg:p-6 h-screen overflow-y-auto">
@@ -299,13 +208,20 @@ Generate a polished, ready-to-publish banner.`;
             </div>
             Qoolline Hub
           </h2>
-          <p className="text-sm text-slate-400 mt-1">Kampanya fabrikasi, kalite kontrol ve icerik uretimi</p>
+          <p className="text-sm text-slate-400 mt-1">Kampanya fabrikasi — blueprint + kreatif beyin + kalite kontrol</p>
         </div>
-        {results.some(r => r.imageBase64) && (
-          <button onClick={handleDownloadAll} className="flex items-center gap-2 px-4 py-2 bg-lumina-900 border border-lumina-800 rounded-lg text-xs text-white hover:bg-lumina-800 transition-all">
-            <Download size={14} /> Tumunu Indir
-          </button>
-        )}
+        <div className="flex items-center gap-2">
+          {isRunning && (
+            <button onClick={stopPipeline} className="flex items-center gap-2 px-3 py-2 bg-red-500/20 border border-red-500/30 rounded-lg text-xs text-red-400 hover:bg-red-500/30 transition-all">
+              <Square size={12} /> Durdur
+            </button>
+          )}
+          {currentRun?.results.some(r => r.generatedImageBase64) && (
+            <button onClick={handleDownloadAll} className="flex items-center gap-2 px-4 py-2 bg-lumina-900 border border-lumina-800 rounded-lg text-xs text-white hover:bg-lumina-800 transition-all">
+              <Download size={14} /> Tumunu Indir
+            </button>
+          )}
+        </div>
       </div>
 
       <div className="grid grid-cols-12 gap-6">
@@ -326,13 +242,10 @@ Generate a polished, ready-to-publish banner.`;
               })}
             </div>
 
-            {/* Tab Content */}
             {activeTab === 'campaigns' && (
               <CampaignFactory brand={brand} onStartGeneration={handleStartGeneration} isRunning={isRunning} />
             )}
-            {activeTab === 'copy' && (
-              <CopywritingPanel />
-            )}
+            {activeTab === 'copy' && <CopywritingPanel />}
             {activeTab === 'countries' && (
               <div className="space-y-4">
                 <CountryThemes
@@ -348,12 +261,161 @@ Generate a polished, ready-to-publish banner.`;
               </div>
             )}
           </div>
+
+          {/* Pipeline Steps */}
+          {currentRun && (
+            <div className="mt-4 bg-lumina-900 border border-lumina-800 rounded-xl p-4">
+              <h3 className="text-xs font-medium text-white mb-3">Pipeline Adimlari</h3>
+              <div className="space-y-2">
+                {currentRun.steps.map(step => (
+                  <div key={step.id} className="flex items-center gap-2">
+                    <div className={`w-5 h-5 rounded-full flex items-center justify-center text-[9px] ${
+                      step.status === 'completed' ? 'bg-emerald-500/20 text-emerald-400' :
+                      step.status === 'running' ? 'bg-blue-500/20 text-blue-400' :
+                      step.status === 'failed' ? 'bg-red-500/20 text-red-400' :
+                      'bg-slate-800 text-slate-600'
+                    }`}>
+                      {step.status === 'completed' ? <Check size={10} /> :
+                       step.status === 'running' ? <Loader2 size={10} className="animate-spin" /> :
+                       step.status === 'failed' ? <XCircle size={10} /> :
+                       <Clock size={10} />}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-[11px] text-white truncate">{step.name}</p>
+                      {step.status === 'running' && step.progress > 0 && (
+                        <div className="w-full h-1 bg-lumina-950 rounded-full mt-1">
+                          <div className="h-full bg-blue-400 rounded-full transition-all" style={{ width: `${step.progress}%` }} />
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+              {currentRun.completedItems > 0 && (
+                <p className="text-[10px] text-slate-500 mt-2">{currentRun.completedItems}/{currentRun.totalItems} gorsel tamamlandi</p>
+              )}
+            </div>
+          )}
         </div>
 
         {/* Right Panel — Results */}
         <div className="col-span-12 lg:col-span-8">
-          {results.length > 0 ? (
-            <QoollineResults results={results} onRevise={handleRevise} logs={logs} />
+          {currentRun && currentRun.results.some(r => r.generatedImageBase64 || r.status !== 'pending') ? (
+            <div className="space-y-5">
+              {Object.entries(resultGroups).map(([baseTopic, group]) => {
+                const hasImages = group.some(r => r.generatedImageBase64 || r.revisedImageBase64);
+                return (
+                  <div key={baseTopic} className="border border-lumina-800 rounded-xl overflow-hidden bg-lumina-950">
+                    {/* Group header */}
+                    <div className="px-3 py-2.5 bg-lumina-900/50 border-b border-lumina-800 flex items-center justify-between">
+                      <div className="min-w-0">
+                        <p className="text-xs text-white font-medium truncate" title={baseTopic}>{baseTopic}</p>
+                        <span className="text-[10px] text-slate-500">{group.length} boyut</span>
+                      </div>
+                      {hasImages && (
+                        <button onClick={() => group.forEach(r => { const img = r.revisedImageBase64 || r.generatedImageBase64; if (img) downloadBase64Image(img, `qoolline-${baseTopic.slice(0, 30)}.png`); })} className="p-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-slate-400 hover:text-white transition-all">
+                          <Download size={12} />
+                        </button>
+                      )}
+                    </div>
+
+                    {/* Images */}
+                    <div className="p-3">
+                      <div className="flex gap-3">
+                        {group.map(result => {
+                          const displayImage = result.revisedImageBase64 || result.generatedImageBase64;
+                          const isThisRevising = revisingIds.has(result.id);
+                          const isExpanded = expandedRevision === result.id;
+                          const fmtMatch = result.topic.match(/\[([\d]+:[\d]+)\]/);
+                          const formatLabel = fmtMatch ? fmtMatch[1] : null;
+                          const arMatch = formatLabel?.match(/(\d+):(\d+)/);
+                          const arW = arMatch ? parseInt(arMatch[1]) : 1;
+                          const arH = arMatch ? parseInt(arMatch[2]) : 1;
+                          const isVertical = arH > arW;
+
+                          return (
+                            <div key={result.id} className="flex-1 min-w-0">
+                              <div className="flex items-center justify-center gap-1.5 mb-2">
+                                <span className="text-[10px] font-bold text-lumina-gold bg-lumina-gold/10 px-2 py-0.5 rounded-full">{formatLabel || 'Original'}</span>
+                              </div>
+
+                              <div className="relative rounded-lg overflow-hidden bg-lumina-900 border border-lumina-800 mx-auto" style={{ aspectRatio: `${arW}/${arH}`, maxHeight: isVertical ? '400px' : '280px' }}>
+                                {isThisRevising ? (
+                                  <div className="w-full h-full flex items-center justify-center bg-lumina-900/50">
+                                    {displayImage && <img src={`data:image/png;base64,${displayImage}`} className="w-full h-full object-cover opacity-30 absolute inset-0" />}
+                                    <div className="text-center relative z-10">
+                                      <Loader2 size={24} className="text-lumina-gold animate-spin mx-auto" />
+                                      <p className="text-xs text-lumina-gold mt-2">Revize ediliyor...</p>
+                                    </div>
+                                  </div>
+                                ) : displayImage ? (
+                                  <img src={`data:image/png;base64,${displayImage}`} className="w-full h-full object-cover" loading="lazy" />
+                                ) : (
+                                  <div className="w-full h-full flex items-center justify-center">
+                                    {result.status === 'generating' ? (
+                                      <div className="text-center"><Loader2 size={24} className="text-lumina-gold animate-spin mx-auto" /><p className="text-xs text-slate-500 mt-2">Uretiliyor...</p></div>
+                                    ) : result.status === 'failed' ? (
+                                      <div className="text-center px-3"><XCircle size={24} className="text-red-400 mx-auto" /><p className="text-xs text-red-400 mt-2">{result.error || 'Hata'}</p></div>
+                                    ) : (
+                                      <Clock size={24} className="text-slate-600" />
+                                    )}
+                                  </div>
+                                )}
+
+                                {result.revisedImageBase64 && !isThisRevising && (
+                                  <div className="absolute top-2 left-2 bg-lumina-gold/90 text-lumina-950 text-[9px] font-bold px-1.5 py-0.5 rounded">REVISED</div>
+                                )}
+
+                                {displayImage && !isThisRevising && (
+                                  <div className="absolute inset-0 bg-black/60 opacity-0 hover:opacity-100 transition-opacity flex items-center justify-center gap-2">
+                                    <button onClick={() => downloadBase64Image(displayImage, `qoolline-${result.topic.slice(0, 30)}.png`)} className="bg-white/20 backdrop-blur-sm text-white px-3 py-1.5 rounded-lg text-xs flex items-center gap-1">
+                                      <Download size={12} /> Indir
+                                    </button>
+                                    <button onClick={() => setExpandedRevision(isExpanded ? null : result.id)} className="bg-lumina-gold/30 backdrop-blur-sm text-lumina-gold px-3 py-1.5 rounded-lg text-xs flex items-center gap-1">
+                                      <Edit2 size={12} /> Revize
+                                    </button>
+                                  </div>
+                                )}
+                              </div>
+
+                              {isExpanded && (
+                                <div className="mt-2 p-2 bg-lumina-950 rounded-lg border border-lumina-800">
+                                  <div className="flex gap-1.5">
+                                    <input type="text" value={revisionPrompts[result.id] || ''} onChange={e => setRevisionPrompts(prev => ({ ...prev, [result.id]: e.target.value }))} onKeyDown={e => e.key === 'Enter' && handleRevise(result.id)} placeholder="Nasil degissin? (diger boyutlar da uyumlanir)" className="flex-1 bg-lumina-900 border border-lumina-800 rounded px-2 py-1.5 text-[11px] text-white focus:outline-none placeholder-slate-600" autoFocus />
+                                    <button onClick={() => handleRevise(result.id)} disabled={!revisionPrompts[result.id]?.trim()} className="px-2 py-1.5 bg-lumina-gold/20 text-lumina-gold rounded text-[11px] hover:bg-lumina-gold/30 disabled:opacity-30"><Send size={10} /></button>
+                                  </div>
+                                  {group.length > 1 && <p className="text-[9px] text-slate-600 mt-1">Bu boyut revize edilecek, diger {group.length - 1} boyut da otomatik uyumlanacak</p>}
+                                </div>
+                              )}
+
+                              <p className="text-[10px] text-slate-500 text-center mt-1">
+                                {isThisRevising ? 'Revize ediliyor...' : result.revisedImageBase64 ? 'Revize edildi' : result.status === 'completed' ? 'Tamamlandi' : result.status === 'failed' ? 'Basarisiz' : result.status === 'generating' ? 'Uretiliyor' : 'Bekliyor'}
+                              </p>
+                            </div>
+                          );
+                        })}
+                      </div>
+                      {group.length > 1 && hasImages && (
+                        <div className="flex items-center justify-center mt-2 gap-2">
+                          <div className="h-px flex-1 bg-lumina-800" /><span className="text-[9px] text-slate-600 px-2">ayni tasarim dili</span><div className="h-px flex-1 bg-lumina-800" />
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+
+              {/* Logs */}
+              <div className="bg-lumina-900 border border-lumina-800 rounded-xl p-4">
+                <h3 className="text-xs text-white font-medium mb-2 flex items-center gap-2"><FileText size={12} className="text-slate-400" /> Pipeline Loglari</h3>
+                <div className="bg-lumina-950 rounded-lg p-3 h-40 overflow-y-auto font-mono text-[10px]">
+                  {logs.map((log, i) => (
+                    <div key={i} className={`py-0.5 ${log.includes('✓') || log.includes('tamamlandı') ? 'text-emerald-400' : log.includes('✗') || log.includes('hata') ? 'text-red-400' : log.includes('Beyin') || log.includes('Direktif') ? 'text-purple-400' : log.includes('Blueprint') ? 'text-blue-400' : 'text-slate-400'}`}>{log}</div>
+                  ))}
+                  <div ref={logsEndRef} />
+                </div>
+              </div>
+            </div>
           ) : (
             <div className="bg-lumina-900 border border-lumina-800 rounded-xl p-12 text-center">
               <div className="w-16 h-16 mx-auto mb-4 rounded-2xl bg-[#F8BE00]/10 flex items-center justify-center">
@@ -361,7 +423,7 @@ Generate a polished, ready-to-publish banner.`;
               </div>
               <h3 className="text-lg font-serif text-white mb-2">Qoolline Kampanya Motoru</h3>
               <p className="text-sm text-slate-500 max-w-md mx-auto">
-                Soldaki panelden kampanya sablonlarini sec, boyutlari belirle ve uretimi baslat. Her gorsel 13 kurala gore otomatik kalite kontrolden gecer.
+                Soldaki panelden kampanya sablonlarini sec, referans gorselleri yukle, boyutlari belirle ve uretimi baslat. Pipeline tam akisla calisir: Blueprint ayristirma → Kreatif Beyin → Gorsel uretim → Adaptasyon.
               </p>
             </div>
           )}
