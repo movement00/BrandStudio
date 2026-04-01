@@ -47,6 +47,23 @@ TARGET SCENARIOS:
 - Scenario 1: UK to Europe travelers — emphasize travel and international usage
 - Scenario 2: Non-EU users — general solution-focused communication
 
+COLOR DISTRIBUTION (MANDATORY):
+- Brand Yellow #F8BE00 — DOMINANT color (~40%), used for backgrounds, key sections, highlights
+- Purple #6B63FF — SECONDARY color (~25%), used for accents, badges, supporting elements, gradients
+- Brand Black #201C1D — used for text and dark sections (~15%)
+- Sweet Green #00CC9B — CTA buttons only (~5%)
+- Remaining: white, grey, tints for contrast and breathing room
+- Purple MUST be visible and prominent in every design — not just a small accent
+
+REFERENCE IMAGE FIDELITY (CRITICAL):
+- The generated image must look ALMOST IDENTICAL to the reference image
+- Keep the SAME layout, composition, visual elements, object placement
+- Only CHANGE: text content (to match campaign), colors (to match brand palette above)
+- Do NOT redesign or reimagine the layout — PRESERVE the reference structure exactly
+- If reference has a phone mockup → keep phone mockup in same position
+- If reference has icons at bottom → keep icons at bottom in same style
+- If reference has a person → keep person in same pose and position
+
 COPYWRITING PILLARS:
 - No Roaming Fees
 - Instant Activation
