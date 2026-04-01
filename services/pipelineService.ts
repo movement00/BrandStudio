@@ -320,6 +320,8 @@ export class PipelineService {
             brain?.contentPlan || null,
             brain?.directives || null,
             brain?.assetPlan || null,
+            null, // carouselPrevSlideBase64
+            config.mandatoryRules || null,
           );
         } else {
           masterImageBase64 = await generateBrandedImage(
