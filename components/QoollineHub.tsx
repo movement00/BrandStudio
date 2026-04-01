@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Zap, Globe, Sparkles, Loader2, Download, Square, FileText, Check, XCircle, Clock, Edit2, Send, ShieldCheck } from 'lucide-react';
-import { Brand, GeneratedAsset, QoollineCampaign, QoollineQcResult, QoollineGenerationResult, PipelineImage } from '../types';
-import { analyzeImageStyle, generateBrandedImage, reviseGeneratedImage, adaptMasterToFormat } from '../services/geminiService';
+import { Brand, GeneratedAsset, QoollineCampaign, QoollineQcResult, QoollineGenerationResult, PipelineImage, StyleAnalysis } from '../types';
+import { analyzeImageStyle, generateBrandedImage, reviseGeneratedImage, adaptMasterToFormat, matchTopicsToStyles } from '../services/geminiService';
 import { QOOLLINE_CAMPAIGNS, QOOLLINE_COUNTRIES, qoollineQualityCheck } from '../services/qoollineService';
 import { downloadBase64Image, downloadMultipleImages } from '../services/downloadService';
 import CampaignFactory from './qoolline/CampaignFactory';
@@ -85,28 +85,63 @@ const QoollineHub: React.FC<QoollineHubProps> = ({ brand, addToHistory }) => {
 
     log(`Uretim baslatildi: ${campaigns.length} kampanya x ${formats.length} format = ${totalImages} gorsel`);
 
-    // Step 1: Analyze reference style (once)
-    log('Referans gorsel analiz ediliyor...');
-    let style;
-    try {
-      style = await analyzeImageStyle(referenceImages[0].base64);
-      log(`  ✓ Stil analizi tamamlandi: ${style.mood}, ${style.artisticStyle}`);
-    } catch (err: any) {
-      log(`  ✗ Stil analizi hatasi: ${err.message}`);
+    // Step 1: Analyze ALL reference images
+    log(`${referenceImages.length} referans gorsel analiz ediliyor...`);
+    const styleMap: { id: string; analysis: StyleAnalysis; base64: string }[] = [];
+
+    for (let i = 0; i < referenceImages.length; i++) {
+      const ref = referenceImages[i];
+      try {
+        const analysis = await analyzeImageStyle(ref.base64);
+        styleMap.push({ id: ref.id, analysis, base64: ref.base64 });
+        log(`  ✓ (${i + 1}/${referenceImages.length}) ${ref.name}: ${analysis.mood}, ${analysis.artisticStyle}`);
+      } catch (err: any) {
+        log(`  ✗ (${i + 1}/${referenceImages.length}) ${ref.name}: ${err.message}`);
+      }
+    }
+
+    if (styleMap.length === 0) {
+      log('Hicbir referans analiz edilemedi. Durduruluyor.');
       setIsRunning(false);
       return;
     }
 
-    // Step 2: Generate each campaign
+    // Step 2: Match campaigns to best reference images
+    log('Kampanyalar referanslarla eslestiriliyor...');
+    const topics = campaigns.map(c => `[${c.type}] ${c.core} — ${c.notes}`);
+    let matches: { topicIndex: number; styleId: string }[];
+
+    if (styleMap.length === 1) {
+      matches = campaigns.map((_, i) => ({ topicIndex: i, styleId: styleMap[0].id }));
+      log(`  Tek referans — tum kampanyalara atandi.`);
+    } else {
+      try {
+        matches = await matchTopicsToStyles(topics, styleMap.map(s => ({ id: s.id, analysis: s.analysis })));
+        log(`  ✓ ${matches.length} eslestirme yapildi.`);
+        matches.forEach(m => {
+          const refName = referenceImages.find(r => r.id === m.styleId)?.name || m.styleId;
+          log(`    → "${campaigns[m.topicIndex].type}" ↔ ${refName}`);
+        });
+      } catch (err: any) {
+        log(`  ✗ Eslestirme hatasi: ${err.message}. Ilk referans kullaniliyor.`);
+        matches = campaigns.map((_, i) => ({ topicIndex: i, styleId: styleMap[0].id }));
+      }
+    }
+
+    // Step 3: Generate each campaign with matched reference
     let completed = 0;
-    for (const campaign of campaigns) {
+    for (let ci = 0; ci < campaigns.length; ci++) {
+      const campaign = campaigns[ci];
+      const match = matches.find(m => m.topicIndex === ci) || { topicIndex: ci, styleId: styleMap[0].id };
+      const matchedRef = styleMap.find(s => s.id === match.styleId) || styleMap[0];
+
       const masterResultId = initialResults.find(r => r.campaignId === campaign.id && r.format === masterFormat)?.id;
       if (!masterResultId) continue;
 
+      const refName = referenceImages.find(r => r.id === matchedRef.id)?.name || 'referans';
       updateResult(masterResultId, { status: 'generating' });
-      log(`🎨 Uretiliyor: "${campaign.type}" [${masterFormat}]`);
+      log(`🎨 Uretiliyor: "${campaign.type}" [${masterFormat}] ← ${refName}`);
 
-      // Simple context — campaign text + brand rules (like compare-app approach)
       const contextDescription = `Campaign: ${campaign.type}
 Headline: "${campaign.core}"
 Supporting: "${campaign.supporting}"
@@ -129,8 +164,8 @@ IMPORTANT RULES:
       try {
         masterImage = await generateBrandedImage(
           brand,
-          style,
-          referenceImages[0].base64,
+          matchedRef.analysis,
+          matchedRef.base64,
           null,
           contextDescription,
           masterFormat
@@ -175,8 +210,8 @@ Bu bir PAKET üretimi — master ile birebir aynı tasarım dili, farklı boyut.
 
           const adapted = await generateBrandedImage(
             brand,
-            style,
-            referenceImages[0].base64,
+            matchedRef.analysis,
+            matchedRef.base64,
             masterImage,  // Master image as product reference
             adaptPrompt,
             fmt
