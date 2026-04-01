@@ -206,7 +206,20 @@ const QoollineHub: React.FC<QoollineHubProps> = ({ brand, addToHistory }) => {
       productImages: [],
       autoRevise: true,
       saveAsTemplate: false,
-      creativeTone: 'professional, clean, mobile-first',
+      creativeTone: `Professional, clean, mobile-first. MANDATORY QOOLLINE CREATIVE RULES — Apply these BEFORE generating:
+1. SINGLE MESSAGE: ONE clear main message per creative. Never put multiple competing messages.
+2. LOGO: Must be high-contrast, sharp, instantly recognizable. NEVER place on gradients or low-contrast backgrounds.
+3. BRAND COLORS ONLY: Yellow #F8BE00, Black #201C1D, Purple #6B63FF, Green #00CC9B. No off-brand colors.
+4. CTA = BUTTON: CTA must be a rounded rectangle button, NOT plain text.
+5. MOBILE READABILITY: All text must be readable on a phone screen. No tiny or low-contrast text.
+6. NO AI ARTIFACTS: No distorted hands, faces, text, or objects. Must look like professional design.
+7. TEXT ACCURACY: All text must be spelled correctly. No placeholder text, gibberish, or broken words.
+8. NO DECORATION CLUTTER: No dots, waves, abstract shapes that don't serve the message.
+9. PRODUCT VISIBILITY: Show Qoolline app UI or phone with app clearly.
+10. TEXT-BACKGROUND CONTRAST: Every text element must have sufficient contrast against its background.
+11. SIMPLE STRUCTURE: Short text blocks, easy to scan. No long fragmented text.
+12. HUMAN-PRODUCT INTERACTION: When possible, show real usage scenario (person with phone).
+13. FORMAT CONSISTENCY: Design must work across 1:1, 4:5, 9:16 without losing the message.`,
       createdAt: Date.now(),
     };
 
