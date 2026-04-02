@@ -185,8 +185,19 @@ export const generateWithOpenAI = async (
   editPrompt: string,
   aspectRatio: string,
 ): Promise<string> => {
-  // Use data URI for reference image
-  const publicUrl = `data:image/jpeg;base64,${referenceImageBase64}`;
+  // Upload reference to fal.ai storage
+  const imgBytes = Uint8Array.from(atob(referenceImageBase64), c => c.charCodeAt(0));
+
+  const initRes = await fetch('https://rest.alpha.fal.ai/storage/upload/initiate', {
+    method: 'POST',
+    headers: { 'Authorization': `Key ${FAL_KEY}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ file_name: 'ref.jpg', content_type: 'image/jpeg' }),
+  });
+  const { file_url, upload_url } = await initRes.json();
+  if (!file_url || !upload_url) throw new Error('Fal AI upload baslatilamadi');
+
+  await fetch(upload_url, { method: 'PUT', headers: { 'Content-Type': 'image/jpeg' }, body: imgBytes });
+  const publicUrl = file_url;
 
   // Fal AI Nano Banana Pro — queue mode
   const submitRes = await fetch('https://queue.fal.run/fal-ai/nano-banana-pro/edit', {
