@@ -165,6 +165,62 @@ function getAI(): GoogleGenAI {
   return new GoogleGenAI({ apiKey: key });
 }
 
+// ═══ OPENAI API KEY MANAGEMENT ═══
+const OPENAI_KEY_STORAGE = 'qoolline_openai_api_key';
+export function getOpenAIKey(): string {
+  try { return localStorage.getItem(OPENAI_KEY_STORAGE) || ''; } catch { return ''; }
+}
+export function setOpenAIKey(key: string) {
+  try { localStorage.setItem(OPENAI_KEY_STORAGE, key); } catch {}
+}
+export function hasOpenAIKey(): boolean {
+  return getOpenAIKey().length > 0;
+}
+
+// ═══ OPENAI GPT-4o — Edit reference image with blueprint changes ═══
+export const generateWithOpenAI = async (
+  referenceImageBase64: string,
+  editPrompt: string,
+  aspectRatio: string,
+): Promise<string> => {
+  const key = getOpenAIKey();
+  if (!key) throw new Error('OPENAI_KEY_MISSING');
+
+  const size = aspectRatio === '9:16' || aspectRatio === '4:5' || aspectRatio === '2:3' ? '1024x1536'
+    : aspectRatio === '16:9' || aspectRatio === '3:2' ? '1536x1024'
+    : '1024x1024';
+
+  const response = await fetch('https://api.openai.com/v1/responses', {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${key}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      model: 'gpt-4o',
+      input: [
+        {
+          role: 'user',
+          content: [
+            { type: 'input_image', image_url: `data:image/jpeg;base64,${referenceImageBase64}` },
+            { type: 'input_text', text: editPrompt },
+          ],
+        },
+      ],
+      tools: [{ type: 'image_generation', size, quality: 'high' }],
+    }),
+  });
+
+  const data = await response.json();
+  if (data.error) throw new Error(data.error.message || 'API error');
+
+  // Extract image from response
+  const imgOutput = data.output?.find((o: any) => o.type === 'image_generation_call');
+  if (imgOutput?.result) return imgOutput.result;
+
+  throw new Error('Görsel oluşturulamadı');
+};
+
 // ═══ SIMPLE GENERATE — 8 layer style analysis + reference image + texts ═══
 export const generateFromStyleAnalysis = async (
   styleJson: string,
