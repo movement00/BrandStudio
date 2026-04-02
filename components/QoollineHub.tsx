@@ -151,10 +151,9 @@ const QoollineHub: React.FC<QoollineHubProps> = ({ brand, addToHistory }) => {
 - Destek metin: "${campaign.supporting}"
 - CTA butonu: "${campaign.cta}"
 - Ekstra bilgi: "${campaign.extra}"
-- Marka logosu/adı: "${brand.name}" (görselde mutlaka görünmeli)
 
-Eğer görselde metin yoksa, bu kampanya metinlerini uygun yerlere ekle.
-Eğer görselde metin varsa, yukarıdaki metinlerle değiştir.\n`;
+Eğer görselde metin varsa, yukarıdaki metinlerle değiştir.
+Eğer görselde metin yoksa, bu kampanya metinlerini uygun yerlere ekle.\n`;
 
       const editPrompt = `Bu görseli "${brand.name}" markası için düzenle.
 
