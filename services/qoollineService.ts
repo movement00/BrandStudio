@@ -177,6 +177,64 @@ export function hasOpenAIKey(): boolean {
   return getOpenAIKey().length > 0;
 }
 
+// ═══ OPENAI GPT-4o — Analyze image into layers ═══
+export const analyzeWithOpenAI = async (
+  imageBase64: string,
+): Promise<any> => {
+  const key = getOpenAIKey();
+  if (!key) throw new Error('OPENAI_KEY_MISSING');
+
+  const response = await fetch('https://api.openai.com/v1/responses', {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${key}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      model: 'gpt-4o',
+      input: [
+        {
+          role: 'user',
+          content: [
+            { type: 'input_image', image_url: `data:image/jpeg;base64,${imageBase64}` },
+            { type: 'input_text', text: `Bu görseli katman katman analiz et. Her bir görsel elemanı (metin, logo, ikon, arka plan, obje, buton, dekorasyon) ayrı bir katman olarak listele.
+
+Her katman için şunu belirt:
+- id: benzersiz numara
+- type: "text" | "logo" | "image" | "icon" | "button" | "background" | "decoration"
+- content: katmanın içeriği (metin ise yazıyı yaz, obje ise ne olduğunu yaz)
+- position: yaklaşık konum (üst-sol, merkez, alt-sağ vs.)
+- color: varsa renk kodu
+- size: küçük/orta/büyük
+
+JSON formatında döndür:
+{
+  "layers": [...],
+  "composition": "genel kompozisyon açıklaması",
+  "mood": "genel hava",
+  "style": "sanatsal stil"
+}
+
+SADECE JSON döndür.` },
+          ],
+        },
+      ],
+      text: { format: { type: 'json_object' } },
+    }),
+  });
+
+  const data = await response.json();
+  if (data.error) throw new Error(data.error.message);
+
+  // Extract text from response
+  const textOutput = data.output?.find((o: any) => o.type === 'message');
+  const content = textOutput?.content?.find((c: any) => c.type === 'output_text');
+  if (content?.text) {
+    try { return JSON.parse(content.text); } catch { return { layers: [], error: 'Parse failed' }; }
+  }
+  return { layers: [], error: 'No response' };
+};
+
 // ═══ OPENAI GPT-4o — Edit reference image with blueprint changes ═══
 export const generateWithOpenAI = async (
   referenceImageBase64: string,
