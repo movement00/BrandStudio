@@ -185,19 +185,8 @@ export const generateWithOpenAI = async (
   editPrompt: string,
   aspectRatio: string,
 ): Promise<string> => {
-  // Upload reference to fal CDN
-  const blob = new Blob([Uint8Array.from(atob(referenceImageBase64), c => c.charCodeAt(0))], { type: 'image/jpeg' });
-  const uploadRes = await fetch('https://fal.run/fal-ai/fast-upload', {
-    method: 'POST',
-    headers: {
-      'Authorization': `Key ${FAL_KEY}`,
-      'Content-Type': 'image/jpeg',
-    },
-    body: blob,
-  });
-  const uploadData = await uploadRes.json();
-  const publicUrl = uploadData.url;
-  if (!publicUrl) throw new Error('Gorsel yuklenemedi: ' + JSON.stringify(uploadData));
+  // Use data URI for reference image
+  const publicUrl = `data:image/jpeg;base64,${referenceImageBase64}`;
 
   // Fal AI Nano Banana Pro — queue mode
   const submitRes = await fetch('https://queue.fal.run/fal-ai/nano-banana-pro/edit', {
