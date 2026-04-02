@@ -1,9 +1,9 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { Zap, Globe, Sparkles, Loader2, Download, Square, FileText, Check, XCircle, Clock, Edit2, Send, Upload, RefreshCw, Key } from 'lucide-react';
+import { Zap, Globe, Sparkles, Loader2, Download, Square, FileText, Check, XCircle, Clock, Edit2, Send, Upload, RefreshCw } from 'lucide-react';
 import { Brand, GeneratedAsset, QoollineCampaign, PipelineImage, PipelineConfig, PipelineRun, PipelineResult } from '../types';
 import { reviseGeneratedImage, resizeImageToRawBase64 } from '../services/geminiService';
 import { pipelineService } from '../services/pipelineService';
-import { QOOLLINE_CAMPAIGNS, QOOLLINE_COUNTRIES, generateWithOpenAI, getOpenAIKey, setOpenAIKey, hasOpenAIKey } from '../services/qoollineService';
+import { QOOLLINE_CAMPAIGNS, QOOLLINE_COUNTRIES } from '../services/qoollineService';
 import { downloadBase64Image, downloadMultipleImages } from '../services/downloadService';
 import CampaignFactory from './qoolline/CampaignFactory';
 import CopywritingPanel from './qoolline/CopywritingPanel';
@@ -25,11 +25,6 @@ const QoollineHub: React.FC<QoollineHubProps> = ({ brand, addToHistory }) => {
 
   const [selectedCountries, setSelectedCountries] = useState<Set<string>>(new Set());
   const [countryCampaignId, setCountryCampaignId] = useState(QOOLLINE_CAMPAIGNS[0].id);
-
-  // Engine toggle
-  const [useOpenAI, setUseOpenAI] = useState(false);
-  const [openaiKey, setOpenaiKeyState] = useState(getOpenAIKey());
-  const [showKeyInput, setShowKeyInput] = useState(false);
 
   // Revision state
   const [expandedRevision, setExpandedRevision] = useState<string | null>(null);
@@ -75,7 +70,6 @@ const QoollineHub: React.FC<QoollineHubProps> = ({ brand, addToHistory }) => {
     referenceImages: PipelineImage[]
   ) => {
     if (referenceImages.length === 0) { alert('En az 1 referans gorsel yukleyin.'); return; }
-    if (useOpenAI && !hasOpenAIKey()) { setShowKeyInput(true); return; }
 
     setIsRunning(true);
     setLogs([]);
@@ -83,62 +77,6 @@ const QoollineHub: React.FC<QoollineHubProps> = ({ brand, addToHistory }) => {
 
     const topics = campaigns.map(c => `${c.core}. ${c.supporting}. CTA: ${c.cta}. ${c.extra}`);
 
-    if (useOpenAI) {
-      // OpenAI mode: Gemini blueprint analysis → OpenAI edit
-      const log2 = (msg: string) => setLogs(prev => [...prev, `[${new Date().toLocaleTimeString('tr-TR')}] ${msg}`]);
-
-      log2(`OpenAI modu: ${campaigns.length} kampanya x ${formats.length} format`);
-
-      // Blueprint analysis with Gemini
-      log2('Gemini ile blueprint ayristiriliyor...');
-      let blueprint: any;
-      try {
-        const { decomposeToBlueprint } = await import('../services/geminiService');
-        blueprint = await decomposeToBlueprint(referenceImages[0].base64);
-        log2(`  ✓ ${blueprint.layers?.length || 0} katman tespit edildi`);
-      } catch (err: any) {
-        log2(`  ✗ Blueprint hatasi: ${err.message}`);
-        setIsRunning(false);
-        return;
-      }
-
-      // For each campaign x format
-      for (const campaign of campaigns) {
-        for (const fmt of formats) {
-          log2(`🎨 OpenAI ile uretiliyor: "${campaign.type}" [${fmt}]`);
-
-          // Build layer-specific edit prompt from blueprint
-          const textLayers = blueprint.layers?.filter((l: any) => l.type === 'text' || l.type === 'logo') || [];
-          const campaignTexts = [campaign.core, campaign.supporting, campaign.cta, campaign.extra].filter(Boolean);
-
-          let layerEdits = 'KATMAN DEĞİŞİKLİKLERİ:\n';
-          textLayers.forEach((l: any, i: number) => {
-            if (l.type === 'logo') {
-              layerEdits += `- Logo "${l.content}" → "${brand.name}"\n`;
-            } else if (i < campaignTexts.length) {
-              layerEdits += `- Metin "${l.content}" → "${campaignTexts[i]}"\n`;
-            }
-          });
-          layerEdits += `- Arka plan/obje renkleri → marka paletine uyarla: ${brand.palette.map(c => `${c.hex}`).join(', ')}\n`;
-          layerEdits += `- Objeler AYNI kalsin, sadece renkleri degisebilir\n`;
-
-          const editPrompt = `Bu görseli "${brand.name}" markası için düzenle.\n\n${layerEdits}\nKompozisyon: ${blueprint.compositionNotes || blueprint.layout?.type || 'koru'}\nStil: ${blueprint.canvas?.style || 'koru'}`;
-
-          try {
-            const image = await generateWithOpenAI(referenceImages[0].base64, editPrompt, fmt);
-            // Store in a simple way — no currentRun for OpenAI mode
-            setLogs(prev => [...prev, `[${new Date().toLocaleTimeString('tr-TR')}]   ✓ Tamamlandi [${fmt}]`]);
-          } catch (err: any) {
-            setLogs(prev => [...prev, `[${new Date().toLocaleTimeString('tr-TR')}]   ✗ Hata: ${err.message}`]);
-          }
-        }
-      }
-      log2('OpenAI uretim tamamlandi!');
-      setIsRunning(false);
-      return;
-    }
-
-    // Gemini Pipeline mode (default)
     const config: PipelineConfig = {
       id: `qoolline-${Date.now()}`,
       name: `Qoolline ${new Date().toLocaleString('tr-TR')}`,
@@ -211,25 +149,13 @@ const QoollineHub: React.FC<QoollineHubProps> = ({ brand, addToHistory }) => {
             <div className="w-8 h-8 rounded-lg bg-[#F8BE00]/20 flex items-center justify-center"><Zap size={18} className="text-[#F8BE00]" /></div>
             Qoolline Hub
           </h2>
-          <p className="text-sm text-slate-400 mt-1">{useOpenAI ? 'OpenAI GPT-4o' : 'Gemini Pipeline'} ile kampanya uretimi</p>
+          <p className="text-sm text-slate-400 mt-1">Blueprint + Kreatif Beyin ile kampanya uretimi</p>
         </div>
         <div className="flex items-center gap-2">
-          <button onClick={() => { setUseOpenAI(!useOpenAI); if (!useOpenAI && !hasOpenAIKey()) setShowKeyInput(true); }} className={`px-3 py-2 rounded-lg border text-xs font-medium transition-all ${useOpenAI ? 'bg-green-500/20 border-green-500/30 text-green-400' : 'bg-lumina-900 border-lumina-800 text-slate-400'}`}>{useOpenAI ? 'OpenAI' : 'Gemini'}</button>
-          {useOpenAI && <button onClick={() => setShowKeyInput(!showKeyInput)} className="p-2 rounded-lg bg-lumina-900 border border-lumina-800 text-slate-400 hover:text-white"><Key size={14} /></button>}
           {isRunning && <button onClick={stopPipeline} className="flex items-center gap-2 px-3 py-2 bg-red-500/20 border border-red-500/30 rounded-lg text-xs text-red-400"><Square size={12} /> Durdur</button>}
           {currentRun?.results.some(r => r.generatedImageBase64) && <button onClick={handleDownloadAll} className="flex items-center gap-2 px-4 py-2 bg-lumina-900 border border-lumina-800 rounded-lg text-xs text-white"><Download size={14} /> Tumunu Indir</button>}
         </div>
       </div>
-
-      {showKeyInput && useOpenAI && (
-        <div className="mb-4 p-4 bg-lumina-900 border border-lumina-800 rounded-xl">
-          <p className="text-xs text-white font-medium mb-2">OpenAI API Key</p>
-          <div className="flex gap-2">
-            <input type="password" value={openaiKey} onChange={e => setOpenaiKeyState(e.target.value)} placeholder="sk-proj-..." className="flex-1 bg-lumina-950 border border-lumina-800 rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-lumina-gold/50 placeholder-slate-600" />
-            <button onClick={() => { setOpenAIKey(openaiKey.trim()); setShowKeyInput(false); }} disabled={!openaiKey.trim()} className="px-4 py-2 bg-lumina-gold/20 text-lumina-gold rounded-lg text-xs font-bold disabled:opacity-30">Kaydet</button>
-          </div>
-        </div>
-      )}
 
       <div className="grid grid-cols-12 gap-6">
         <div className="col-span-12 lg:col-span-4">
