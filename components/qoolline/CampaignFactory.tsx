@@ -1,9 +1,8 @@
 import React, { useState } from 'react';
-import { Check, Zap, Upload, X, Plus } from 'lucide-react';
+import { Check, Zap, Upload, X, Plus, Loader2, Sparkles, Download } from 'lucide-react';
 import { Brand, QoollineCampaign, PipelineImage } from '../../types';
 import { QOOLLINE_CAMPAIGNS, generateCampaignTemplates } from '../../services/qoollineService';
 import { resizeImageToRawBase64 } from '../../services/geminiService';
-import { Loader2, Sparkles } from 'lucide-react';
 
 interface CampaignFactoryProps {
   brand: Brand;
@@ -85,6 +84,18 @@ const CampaignFactory: React.FC<CampaignFactoryProps> = ({ brand, onStartGenerat
       alert('Sablon uretimi basarisiz: ' + err.message);
     }
     setIsGeneratingTemplates(false);
+  };
+
+  const exportToExcel = () => {
+    const rows = allCampaigns.map(c => [c.type, c.core, c.supporting, c.cta, c.extra, c.notes].map(v => `"${(v || '').replace(/"/g, '""')}"`).join(','));
+    const csv = 'Type,Core,Supporting Text,CTA,Extra Texts,Notes\n' + rows.join('\n');
+    const blob = new Blob(['\ufeff' + csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `Qoolline_Kampanya_Sablonlari_${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
   };
 
   return (
@@ -179,9 +190,14 @@ const CampaignFactory: React.FC<CampaignFactoryProps> = ({ brand, onStartGenerat
           </select>
         </div>
         <input type="text" value={templateStyle} onChange={e => setTemplateStyle(e.target.value)} placeholder="Stil yonlendirmesi (opsiyonel): orn. seasonal, emotional, luxury..." className="w-full bg-lumina-900 border border-lumina-800 rounded px-2 py-1.5 text-[11px] text-white focus:outline-none placeholder-slate-600 mb-2" />
-        <button onClick={handleGenerateTemplates} disabled={isGeneratingTemplates} className="w-full py-2 bg-lumina-gold/10 text-lumina-gold border border-lumina-gold/30 rounded-lg text-xs font-bold hover:bg-lumina-gold/20 transition-all disabled:opacity-30 flex items-center justify-center gap-1.5">
-          {isGeneratingTemplates ? <><Loader2 size={12} className="animate-spin" /> Uretiliyor...</> : <><Sparkles size={12} /> {templateCount} Sablon Uret</>}
-        </button>
+        <div className="flex gap-2">
+          <button onClick={handleGenerateTemplates} disabled={isGeneratingTemplates} className="flex-1 py-2 bg-lumina-gold/10 text-lumina-gold border border-lumina-gold/30 rounded-lg text-xs font-bold hover:bg-lumina-gold/20 transition-all disabled:opacity-30 flex items-center justify-center gap-1.5">
+            {isGeneratingTemplates ? <><Loader2 size={12} className="animate-spin" /> Uretiliyor...</> : <><Sparkles size={12} /> {templateCount} Sablon Uret</>}
+          </button>
+          <button onClick={exportToExcel} className="px-3 py-2 bg-lumina-900 border border-lumina-800 rounded-lg text-xs text-slate-400 hover:text-white transition-all flex items-center gap-1" title="Kampanyalari Excel olarak indir">
+            <Download size={12} /> Excel
+          </button>
+        </div>
       </div>
 
       {/* Format Selection */}
