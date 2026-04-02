@@ -162,7 +162,7 @@ KORU:
       if (!masterResultId) continue;
 
       setResults(prev => prev.map(r => r.id === masterResultId ? { ...r, status: 'generating' } : r));
-      log(`🎨 Kie AI Nano Banana Pro ile uretiliyor: "${campaign.type}" [${masterFormat}]`);
+      log(`🎨 Fal AI Nano Banana Pro ile uretiliyor: "${campaign.type}" [${masterFormat}]`);
 
       let masterImage: string | null = null;
       try {
@@ -262,7 +262,7 @@ KORU:
             <div className="w-8 h-8 rounded-lg bg-[#F8BE00]/20 flex items-center justify-center"><Zap size={18} className="text-[#F8BE00]" /></div>
             Qoolline Hub
           </h2>
-          <p className="text-sm text-slate-400 mt-1">Gemini analiz + Kie AI Nano Banana Pro uretim</p>
+          <p className="text-sm text-slate-400 mt-1">Gemini analiz + Fal AI Nano Banana Pro uretim</p>
         </div>
         <div className="flex items-center gap-2">
           <button onClick={() => setShowKeyInput(!showKeyInput)} className="p-2 rounded-lg bg-lumina-900 border border-lumina-800 text-slate-400 hover:text-white"><Key size={14} /></button>
@@ -272,7 +272,7 @@ KORU:
 
       {showKeyInput && (
         <div className="mb-4 p-4 bg-lumina-900 border border-lumina-800 rounded-xl">
-          <p className="text-xs text-white font-medium mb-2">Kie AI API Key</p>
+          <p className="text-xs text-white font-medium mb-2">Fal AI API Key (otomatik)</p>
           <div className="flex gap-2">
             <input type="password" value={openaiKey} onChange={e => setOpenaiKeyState(e.target.value)} placeholder="sk-proj-..." className="flex-1 bg-lumina-950 border border-lumina-800 rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-lumina-gold/50 placeholder-slate-600" />
             <button onClick={() => { setOpenAIKey(openaiKey.trim()); setShowKeyInput(false); }} disabled={!openaiKey.trim()} className="px-4 py-2 bg-lumina-gold/20 text-lumina-gold rounded-lg text-xs font-bold disabled:opacity-30">Kaydet</button>
