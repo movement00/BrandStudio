@@ -1,7 +1,7 @@
 import React, { useState, useCallback, useRef, useEffect } from 'react';
 import { Zap, Sparkles, Loader2, Download, FileText, Clock, XCircle, Edit2, Send, Upload, RefreshCw, Key } from 'lucide-react';
 import { Brand, GeneratedAsset, QoollineCampaign, PipelineImage } from '../types';
-import { reviseGeneratedImage, resizeImageToRawBase64 } from '../services/geminiService';
+import { analyzeImageStyle, reviseGeneratedImage, resizeImageToRawBase64 } from '../services/geminiService';
 import { QOOLLINE_CAMPAIGNS, generateWithOpenAI, getOpenAIKey, setOpenAIKey, hasOpenAIKey } from '../services/qoollineService';
 import { downloadBase64Image, downloadMultipleImages } from '../services/downloadService';
 import CampaignFactory from './qoolline/CampaignFactory';
@@ -70,24 +70,54 @@ const QoollineHub: React.FC<QoollineHubProps> = ({ brand, addToHistory }) => {
     });
     setResults(initResults);
 
-    log(`OpenAI GPT-4o ile uretim baslatildi: ${campaigns.length} kampanya x ${formats.length} format`);
+    log(`Uretim baslatildi: ${campaigns.length} kampanya x ${formats.length} format`);
 
+    // Step 1: Gemini ile 8 katmanli stil analizi
+    log('Gemini ile stil analizi yapiliyor...');
+    let styleAnalysis: any;
+    try {
+      styleAnalysis = await analyzeImageStyle(referenceImages[0].base64);
+      log(`  ✓ Analiz tamamlandi: ${styleAnalysis.mood}, ${styleAnalysis.artisticStyle}`);
+      log(`  → Kompozisyon: ${styleAnalysis.composition}`);
+      log(`  → Arka Plan: ${styleAnalysis.backgroundDetails}`);
+    } catch (err: any) {
+      log(`  ✗ Analiz hatasi: ${err.message}. Analizsiz devam ediliyor.`);
+      styleAnalysis = null;
+    }
+
+    // Step 2: Her kampanya x format icin OpenAI ile uretim
     for (const campaign of campaigns) {
       for (const fmt of formats) {
         const resultId = initResults.find(r => r.campaignId === campaign.id && r.format === fmt)?.id;
         if (!resultId) continue;
 
         setResults(prev => prev.map(r => r.id === resultId ? { ...r, status: 'generating' } : r));
-        log(`🎨 Uretiliyor: "${campaign.type}" [${fmt}]`);
+        log(`🎨 OpenAI ile uretiliyor: "${campaign.type}" [${fmt}]`);
 
-        const editPrompt = `Edit this image for the brand "${brand.name}". Keep the EXACT same composition, objects, style, and mood. Only change the texts and branding:
-- Headline: "${campaign.core}"
-- Supporting: "${campaign.supporting}"
-- CTA Button: "${campaign.cta}"
-- Extra: "${campaign.extra}"
-- Brand logo: "${brand.name}"
-- Brand colors: ${brand.palette.map(c => `${c.name}: ${c.hex}`).join(', ')}
-Keep all objects and visual elements identical. Only replace texts and apply brand colors.`;
+        const styleSection = styleAnalysis ? `
+GÖRSEL ANALİZİ (bu katmanları koru):
+- Kompozisyon: ${styleAnalysis.composition}
+- Işıklandırma: ${styleAnalysis.lighting}
+- Renk atmosferi: ${styleAnalysis.colorPaletteDescription}
+- Mood: ${styleAnalysis.mood}
+- Doku: ${styleAnalysis.textureDetails}
+- Kamera açısı: ${styleAnalysis.cameraAngle}
+- Stil: ${styleAnalysis.artisticStyle}
+- Arka plan: ${styleAnalysis.backgroundDetails}` : '';
+
+        const editPrompt = `Edit this image for the brand "${brand.name}".
+${styleSection}
+
+DEĞİŞECEK KATMANLAR:
+- Tüm metin katmanları → Başlık: "${campaign.core}", Destek: "${campaign.supporting}", CTA Buton: "${campaign.cta}", Ekstra: "${campaign.extra}"
+- Logo katmanı → "${brand.name}"
+- Renk katmanları → Marka renkleri: ${brand.palette.map(c => `${c.name}: ${c.hex}`).join(', ')}
+
+DEĞİŞMEYECEK KATMANLAR:
+- Tüm objeler (kişiler, nesneler, araçlar, hayvanlar) aynı kalsın
+- Genel kompozisyon ve yerleşim aynı kalsın
+- Arka plan yapısı ve stili aynı kalsın
+- Objelerin renkleri marka paletine uyarlanabilir ama objelerin kendisi DEĞİŞMEMELİ`;
 
         try {
           const image = await generateWithOpenAI(referenceImages[0].base64, editPrompt, fmt);
