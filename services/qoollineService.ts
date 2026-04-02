@@ -177,62 +177,47 @@ export function hasOpenAIKey(): boolean {
   return getOpenAIKey().length > 0;
 }
 
-// ═══ KIE AI GPT-4o Image — Edit with reference image ═══
+// ═══ KIE AI Flux Kontext — Edit with reference image ═══
 export const generateWithOpenAI = async (
   referenceImageBase64: string,
   editPrompt: string,
   aspectRatio: string,
 ): Promise<string> => {
   const key = getOpenAIKey();
-  if (!key) throw new Error('API_KEY_MISSING — Kie AI veya OpenAI key giriniz');
+  if (!key) throw new Error('API_KEY_MISSING — Kie AI key giriniz');
 
-  // First try Kie AI (GPT-4o Image with reference)
-  // Upload reference to get public URL
-  const uploadRes = await fetch('https://litterbox.catbox.moe/resources/internals/api.php', {
-    method: 'POST',
-    body: (() => {
-      const form = new FormData();
-      form.append('reqtype', 'fileupload');
-      form.append('time', '1h');
-      const blob = new Blob([Uint8Array.from(atob(referenceImageBase64), c => c.charCodeAt(0))], { type: 'image/jpeg' });
-      form.append('fileToUpload', blob, 'ref.jpg');
-      return form;
-    })(),
-  });
-  const publicUrl = await uploadRes.text();
+  const ar = aspectRatio === '9:16' ? '9:16' : aspectRatio === '4:5' ? '3:4' : aspectRatio === '16:9' ? '16:9' : '4:3';
 
-  // Kie AI GPT-4o Image generate with reference
-  const size = aspectRatio === '9:16' || aspectRatio === '4:5' ? '2:3' : aspectRatio === '16:9' ? '3:2' : '1:1';
-
-  const createRes = await fetch('https://api.kie.ai/api/v1/gpt4o-image/generate', {
+  // Use Flux Kontext Pro — best for reference-based editing
+  const createRes = await fetch('https://api.kie.ai/api/v1/flux/kontext/generate', {
     method: 'POST',
     headers: { 'Authorization': `Bearer ${key}`, 'Content-Type': 'application/json' },
     body: JSON.stringify({
       prompt: editPrompt,
-      size,
-      nVariants: 1,
-      isEnhance: false,
-      filesUrl: [publicUrl.trim()],
+      inputImage: `data:image/jpeg;base64,${referenceImageBase64}`,
+      aspectRatio: ar,
+      outputFormat: 'png',
+      model: 'flux-kontext-pro',
+      enableTranslation: false,
     }),
   });
 
   const createData = await createRes.json();
-  if (createData.code !== 200) throw new Error(createData.msg || 'Kie AI task olusturulamadi');
+  if (createData.code !== 200) throw new Error(createData.msg || 'Task olusturulamadi');
   const taskId = createData.data?.taskId;
   if (!taskId) throw new Error('Task ID alinamadi');
 
   // Poll for result
   for (let i = 0; i < 40; i++) {
     await new Promise(r => setTimeout(r, 5000));
-    const statusRes = await fetch(`https://api.kie.ai/api/v1/gpt4o-image/record-info?taskId=${taskId}`, {
+    const statusRes = await fetch(`https://api.kie.ai/api/v1/flux/kontext/record-info?taskId=${taskId}`, {
       headers: { 'Authorization': `Bearer ${key}` },
     });
     const statusData = await statusRes.json();
     if (statusData.data?.successFlag === 1) {
-      const urls = statusData.data?.response?.resultUrls || [];
-      if (urls.length > 0) {
-        // Download image and convert to base64
-        const imgRes = await fetch(urls[0]);
+      const url = statusData.data?.response?.resultImageUrl;
+      if (url) {
+        const imgRes = await fetch(url);
         const imgBlob = await imgRes.blob();
         const buf = await imgBlob.arrayBuffer();
         const base64 = btoa(String.fromCharCode(...new Uint8Array(buf)));
@@ -242,7 +227,7 @@ export const generateWithOpenAI = async (
       throw new Error(statusData.data?.errorMessage || 'Uretim basarisiz');
     }
   }
-  throw new Error('Timeout — uretim cok uzun surdu');
+  throw new Error('Timeout');
 };
 
 // ═══ SIMPLE GENERATE — 8 layer style analysis + reference image + texts ═══
