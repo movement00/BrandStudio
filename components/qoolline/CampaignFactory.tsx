@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Check, Zap, Upload, X } from 'lucide-react';
+import { Check, Zap, Upload, X, Plus } from 'lucide-react';
 import { Brand, QoollineCampaign, PipelineImage } from '../../types';
 import { QOOLLINE_CAMPAIGNS } from '../../services/qoollineService';
 import { resizeImageToRawBase64 } from '../../services/geminiService';
@@ -21,6 +21,13 @@ const CampaignFactory: React.FC<CampaignFactoryProps> = ({ brand, onStartGenerat
   const [selectedCampaigns, setSelectedCampaigns] = useState<Set<string>>(new Set(QOOLLINE_CAMPAIGNS.map(c => c.id)));
   const [selectedFormats, setSelectedFormats] = useState<Set<string>>(new Set(['4:5', '9:16']));
   const [referenceImages, setReferenceImages] = useState<PipelineImage[]>([]);
+  const [customCampaigns, setCustomCampaigns] = useState<QoollineCampaign[]>([]);
+  const [showCustomInput, setShowCustomInput] = useState(false);
+  const [customCore, setCustomCore] = useState('');
+  const [customSupporting, setCustomSupporting] = useState('');
+  const [customCta, setCustomCta] = useState('');
+  const [customExtra, setCustomExtra] = useState('');
+  const [customType, setCustomType] = useState('Custom');
 
   const toggleCampaign = (id: string) => {
     setSelectedCampaigns(prev => { const next = new Set(prev); if (next.has(id)) next.delete(id); else next.add(id); return next; });
@@ -44,8 +51,24 @@ const CampaignFactory: React.FC<CampaignFactoryProps> = ({ brand, onStartGenerat
 
   const removeImage = (id: string) => setReferenceImages(prev => prev.filter(img => img.id !== id));
 
-  const selectedCampaignList = QOOLLINE_CAMPAIGNS.filter(c => selectedCampaigns.has(c.id));
+  const allCampaigns = [...QOOLLINE_CAMPAIGNS, ...customCampaigns];
+  const selectedCampaignList = allCampaigns.filter(c => selectedCampaigns.has(c.id));
   const totalImages = selectedCampaignList.length * selectedFormats.size;
+
+  const addCustomCampaign = () => {
+    if (!customCore.trim()) return;
+    const id = `custom-${Date.now()}`;
+    const newCampaign: QoollineCampaign = { id, type: customType || 'Custom', core: customCore, supporting: customSupporting, cta: customCta || 'Learn More', extra: customExtra, notes: '' };
+    setCustomCampaigns(prev => [...prev, newCampaign]);
+    setSelectedCampaigns(prev => new Set(prev).add(id));
+    setCustomCore(''); setCustomSupporting(''); setCustomCta(''); setCustomExtra(''); setCustomType('Custom');
+    setShowCustomInput(false);
+  };
+
+  const removeCustomCampaign = (id: string) => {
+    setCustomCampaigns(prev => prev.filter(c => c.id !== id));
+    setSelectedCampaigns(prev => { const n = new Set(prev); n.delete(id); return n; });
+  };
 
   return (
     <div className="space-y-6">
@@ -73,8 +96,8 @@ const CampaignFactory: React.FC<CampaignFactoryProps> = ({ brand, onStartGenerat
       <div>
         <div className="flex items-center justify-between mb-3">
           <h3 className="text-sm font-medium text-white">Kampanya Sablonlari</h3>
-          <button onClick={() => setSelectedCampaigns(prev => prev.size === QOOLLINE_CAMPAIGNS.length ? new Set() : new Set(QOOLLINE_CAMPAIGNS.map(c => c.id)))} className="text-[10px] text-lumina-gold hover:underline">
-            {selectedCampaigns.size === QOOLLINE_CAMPAIGNS.length ? 'Hicbirini Sec' : 'Tumunu Sec'}
+          <button onClick={() => setSelectedCampaigns(prev => prev.size === allCampaigns.length ? new Set() : new Set(allCampaigns.map(c => c.id)))} className="text-[10px] text-lumina-gold hover:underline">
+            {selectedCampaigns.size === allCampaigns.length ? 'Hicbirini Sec' : 'Tumunu Sec'}
           </button>
         </div>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
@@ -98,6 +121,38 @@ const CampaignFactory: React.FC<CampaignFactoryProps> = ({ brand, onStartGenerat
         </div>
       </div>
 
+      {/* Custom Campaigns */}
+      {customCampaigns.map(c => (
+        <div key={c.id} className="flex items-start gap-2 p-3 rounded-lg border border-lumina-gold/50 bg-lumina-gold/5">
+          <div className={`w-4 h-4 rounded border bg-lumina-gold border-lumina-gold flex items-center justify-center shrink-0 mt-0.5`}>
+            <Check size={10} className="text-lumina-950" />
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className="text-xs font-medium text-white">{c.type}</p>
+            <p className="text-[11px] text-lumina-gold">"{c.core}"</p>
+          </div>
+          <button onClick={() => removeCustomCampaign(c.id)} className="text-red-400 hover:text-red-300 shrink-0"><X size={12} /></button>
+        </div>
+      ))}
+
+      {showCustomInput ? (
+        <div className="p-3 bg-lumina-950 border border-lumina-800 rounded-lg space-y-2">
+          <input type="text" value={customType} onChange={e => setCustomType(e.target.value)} placeholder="Kampanya tipi (orn: Promo)" className="w-full bg-lumina-900 border border-lumina-800 rounded px-2 py-1.5 text-[11px] text-white focus:outline-none placeholder-slate-600" />
+          <input type="text" value={customCore} onChange={e => setCustomCore(e.target.value)} placeholder="Ana baslik *" className="w-full bg-lumina-900 border border-lumina-800 rounded px-2 py-1.5 text-[11px] text-white focus:outline-none placeholder-slate-600" />
+          <input type="text" value={customSupporting} onChange={e => setCustomSupporting(e.target.value)} placeholder="Destek metin" className="w-full bg-lumina-900 border border-lumina-800 rounded px-2 py-1.5 text-[11px] text-white focus:outline-none placeholder-slate-600" />
+          <input type="text" value={customCta} onChange={e => setCustomCta(e.target.value)} placeholder="CTA butonu (orn: Get eSIM)" className="w-full bg-lumina-900 border border-lumina-800 rounded px-2 py-1.5 text-[11px] text-white focus:outline-none placeholder-slate-600" />
+          <input type="text" value={customExtra} onChange={e => setCustomExtra(e.target.value)} placeholder="Ekstra bilgi" className="w-full bg-lumina-900 border border-lumina-800 rounded px-2 py-1.5 text-[11px] text-white focus:outline-none placeholder-slate-600" />
+          <div className="flex gap-2">
+            <button onClick={addCustomCampaign} disabled={!customCore.trim()} className="flex-1 py-1.5 bg-lumina-gold/20 text-lumina-gold rounded text-[11px] font-bold disabled:opacity-30">Ekle</button>
+            <button onClick={() => setShowCustomInput(false)} className="px-3 py-1.5 bg-lumina-900 text-slate-400 rounded text-[11px]">Iptal</button>
+          </div>
+        </div>
+      ) : (
+        <button onClick={() => setShowCustomInput(true)} className="w-full py-2 border-2 border-dashed border-lumina-700 rounded-lg text-xs text-slate-500 hover:border-lumina-gold/50 hover:text-lumina-gold transition-all flex items-center justify-center gap-1.5">
+          <Plus size={14} /> Ozel Kampanya Ekle
+        </button>
+      )}
+
       {/* Format Selection */}
       <div>
         <h3 className="text-sm font-medium text-white mb-3">Boyutlar</h3>
@@ -114,7 +169,7 @@ const CampaignFactory: React.FC<CampaignFactoryProps> = ({ brand, onStartGenerat
       </div>
 
       {/* Start Button */}
-      <button onClick={() => onStartGeneration(selectedCampaignList, Array.from(selectedFormats), referenceImages)} disabled={isRunning || selectedCampaigns.size === 0 || selectedFormats.size === 0} className="w-full py-3 bg-[#F8BE00] text-[#201C1D] rounded-xl font-bold text-sm hover:bg-[#F8BE00]/90 transition-colors disabled:opacity-30 disabled:cursor-not-allowed flex items-center justify-center gap-2">
+      <button onClick={() => onStartGeneration(selectedCampaignList, Array.from(selectedFormats), referenceImages)} disabled={isRunning || selectedCampaignList.length === 0 || selectedFormats.size === 0} className="w-full py-3 bg-[#F8BE00] text-[#201C1D] rounded-xl font-bold text-sm hover:bg-[#F8BE00]/90 transition-colors disabled:opacity-30 disabled:cursor-not-allowed flex items-center justify-center gap-2">
         <Zap size={16} />
         Kampanya Uret — {totalImages} gorsel ({selectedCampaigns.size} kampanya x {selectedFormats.size} boyut)
       </button>
