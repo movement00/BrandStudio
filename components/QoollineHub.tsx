@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Zap, Globe, Sparkles, Loader2, Download, Square, FileText, Check, XCircle, Clock, Edit2, Send, Upload, RefreshCw, Key } from 'lucide-react';
 import { Brand, GeneratedAsset, QoollineCampaign, PipelineImage, PipelineRun, PipelineResult } from '../types';
 import { decomposeToBlueprint, analyzeImageStyle, matchTopicsToStyles, reviseGeneratedImage, resizeImageToRawBase64 } from '../services/geminiService';
-import { QOOLLINE_CAMPAIGNS, QOOLLINE_COUNTRIES, generateWithOpenAI, getOpenAIKey, setOpenAIKey, hasOpenAIKey } from '../services/qoollineService';
+import { QOOLLINE_CAMPAIGNS, QOOLLINE_COUNTRIES, generateWithOpenAI, analyzeTypography, getOpenAIKey, setOpenAIKey, hasOpenAIKey } from '../services/qoollineService';
 import { downloadBase64Image, downloadMultipleImages } from '../services/downloadService';
 import CampaignFactory from './qoolline/CampaignFactory';
 import CopywritingPanel from './qoolline/CopywritingPanel';
@@ -155,6 +155,13 @@ const QoollineHub: React.FC<QoollineHubProps> = ({ brand, addToHistory }) => {
 Eğer görselde metin varsa, yukarıdaki metinlerle değiştir.
 Eğer görselde metin yoksa, bu kampanya metinlerini uygun yerlere ekle.\n`;
 
+      // Typography agent — decide emphasis, colors, sizes
+      let typoDirective = '';
+      try {
+        typoDirective = await analyzeTypography(campaign, brand, bp.layers || []);
+        log(`  → Tipografi: ${typoDirective.slice(0, 80)}...`);
+      } catch { /* skip if fails */ }
+
       const editPrompt = `Bu görseli "${brand.name}" markası için düzenle.
 
 ${layerEdits}
@@ -164,7 +171,8 @@ RENK DEĞİŞİKLİKLERİ:
 
 KORU:
 - Tüm objeler, kişiler, nesneler aynı kalsın (sadece renkleri değişebilir)
-- Genel kompozisyon ve yerleşim aynı kalsın`;
+- Genel kompozisyon ve yerleşim aynı kalsın
+${typoDirective ? `\nTİPOGRAFİ:\n${typoDirective}` : ''}`;
 
       // 4:5 MASTER — OpenAI
       const masterResultId = initResults.find(r => r.campaignId === campaign.id && r.format === masterFormat)?.id;

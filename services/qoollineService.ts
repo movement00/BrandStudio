@@ -236,6 +236,50 @@ SADECE JSON array don, baska bir sey yazma.`
   }
 };
 
+// ═══ TYPOGRAPHY AGENT — Decides emphasis, colors, sizes for each campaign ═══
+export const analyzeTypography = async (
+  campaign: QoollineCampaign,
+  brand: Brand,
+  blueprintLayers: any[],
+): Promise<string> => {
+  const ai = getAI();
+
+  const textLayers = blueprintLayers.filter((l: any) => l.type === 'text' || l.type === 'logo');
+
+  const response = await ai.models.generateContent({
+    model: 'gemini-3-pro-preview',
+    contents: {
+      parts: [{
+        text: `Sen bir tipografi direktörusun. Bu kampanya için metin stillerini belirle.
+
+MARKA: ${brand.name}
+RENK PALETİ: ${brand.palette.map(c => `${c.name}: ${c.hex}`).join(', ')}
+
+KAMPANYA:
+- Başlık: "${campaign.core}"
+- Destek: "${campaign.supporting}"
+- CTA: "${campaign.cta}"
+
+MEVCUT TEXT KATMANLARI:
+${textLayers.map(l => `- [${l.type}] "${l.content}" (${l.position?.anchor || ''})`).join('\n')}
+
+Şu kararları ver (kısa, net):
+1. Başlıkta hangi kelime(ler) FARKLI RENKTE vurgulanmalı? Hangi renk? (marka paletinden)
+2. Başlık boyutu ve ağırlığı? (bold/extrabold, large/xlarge)
+3. Destek metin stili? (light/regular, renk)
+4. CTA buton stili? (renk, arka plan rengi, bold)
+
+SADECE 2-3 cümlelik kısa talimat yaz. Örnek:
+"Başlıkta 'Roaming Fees' kelimesi #6B63FF mor ile vurgulu, geri kalan beyaz bold. Destek metin açık gri light. CTA butonu #F8BE00 sarı arka plan, siyah bold metin."
+
+SADECE talimatı yaz, başka bir şey yazma.`
+      }]
+    }
+  });
+
+  return response.text || '';
+};
+
 // ═══ OPENAI API KEY MANAGEMENT ═══
 const OPENAI_KEY_STORAGE = 'qoolline_openai_api_key';
 export function getOpenAIKey(): string {
