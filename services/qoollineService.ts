@@ -177,7 +177,7 @@ export function hasOpenAIKey(): boolean {
   return getOpenAIKey().length > 0;
 }
 
-// ═══ KIE AI Flux Kontext — Edit with reference image ═══
+// ═══ KIE AI Nano Banana Pro — Blueprint-based generation with reference ═══
 export const generateWithOpenAI = async (
   referenceImageBase64: string,
   editPrompt: string,
@@ -186,19 +186,29 @@ export const generateWithOpenAI = async (
   const key = getOpenAIKey();
   if (!key) throw new Error('API_KEY_MISSING — Kie AI key giriniz');
 
-  const ar = aspectRatio === '9:16' ? '9:16' : aspectRatio === '4:5' ? '3:4' : aspectRatio === '16:9' ? '16:9' : '4:3';
+  // Upload reference image to get public URL
+  const uploadForm = new FormData();
+  uploadForm.append('reqtype', 'fileupload');
+  uploadForm.append('time', '1h');
+  const blob = new Blob([Uint8Array.from(atob(referenceImageBase64), c => c.charCodeAt(0))], { type: 'image/jpeg' });
+  uploadForm.append('fileToUpload', blob, 'ref.jpg');
+  const uploadRes = await fetch('https://litterbox.catbox.moe/resources/internals/api.php', { method: 'POST', body: uploadForm });
+  const publicUrl = (await uploadRes.text()).trim();
+  if (!publicUrl.startsWith('http')) throw new Error('Gorsel yuklenemedi');
 
-  // Use Flux Kontext Pro — best for reference-based editing
-  const createRes = await fetch('https://api.kie.ai/api/v1/flux/kontext/generate', {
+  // Kie AI Nano Banana Pro — with reference image
+  const createRes = await fetch('https://api.kie.ai/api/v1/jobs/createTask', {
     method: 'POST',
     headers: { 'Authorization': `Bearer ${key}`, 'Content-Type': 'application/json' },
     body: JSON.stringify({
-      prompt: editPrompt,
-      inputImage: `data:image/jpeg;base64,${referenceImageBase64}`,
-      aspectRatio: ar,
-      outputFormat: 'png',
-      model: 'flux-kontext-pro',
-      enableTranslation: false,
+      model: 'nano-banana-pro',
+      input: {
+        prompt: editPrompt,
+        image_input: [publicUrl],
+        aspect_ratio: aspectRatio,
+        resolution: '2K',
+        output_format: 'png',
+      },
     }),
   });
 
@@ -207,24 +217,25 @@ export const generateWithOpenAI = async (
   const taskId = createData.data?.taskId;
   if (!taskId) throw new Error('Task ID alinamadi');
 
-  // Poll for result
-  for (let i = 0; i < 40; i++) {
-    await new Promise(r => setTimeout(r, 5000));
-    const statusRes = await fetch(`https://api.kie.ai/api/v1/flux/kontext/record-info?taskId=${taskId}`, {
+  // Poll for result (unified endpoint)
+  for (let i = 0; i < 50; i++) {
+    await new Promise(r => setTimeout(r, 4000));
+    const statusRes = await fetch(`https://api.kie.ai/api/v1/jobs/getTaskDetails?taskId=${taskId}`, {
       headers: { 'Authorization': `Bearer ${key}` },
     });
     const statusData = await statusRes.json();
-    if (statusData.data?.successFlag === 1) {
-      const url = statusData.data?.response?.resultImageUrl;
-      if (url) {
-        const imgRes = await fetch(url);
+    const task = statusData.data;
+    if (task?.status === 'SUCCESS' || task?.successFlag === 1) {
+      const urls = task?.response?.resultUrls || task?.output?.images || [];
+      const resultUrl = typeof urls === 'string' ? urls : (urls[0]?.url || urls[0]);
+      if (resultUrl) {
+        const imgRes = await fetch(resultUrl);
         const imgBlob = await imgRes.blob();
         const buf = await imgBlob.arrayBuffer();
-        const base64 = btoa(String.fromCharCode(...new Uint8Array(buf)));
-        return base64;
+        return btoa(String.fromCharCode(...new Uint8Array(buf)));
       }
-    } else if (statusData.data?.successFlag === 2) {
-      throw new Error(statusData.data?.errorMessage || 'Uretim basarisiz');
+    } else if (task?.status === 'FAILED' || task?.successFlag === 2) {
+      throw new Error(task?.errorMessage || 'Uretim basarisiz');
     }
   }
   throw new Error('Timeout');

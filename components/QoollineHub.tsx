@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Zap, Globe, Sparkles, Loader2, Download, Square, FileText, Check, XCircle, Clock, Edit2, Send, Upload, RefreshCw, Key } from 'lucide-react';
 import { Brand, GeneratedAsset, QoollineCampaign, PipelineImage, PipelineRun, PipelineResult } from '../types';
-import { decomposeToBlueprint, analyzeImageStyle, adaptMasterToFormat, matchTopicsToStyles, reviseGeneratedImage, resizeImageToRawBase64 } from '../services/geminiService';
+import { decomposeToBlueprint, analyzeImageStyle, matchTopicsToStyles, reviseGeneratedImage, resizeImageToRawBase64 } from '../services/geminiService';
 import { QOOLLINE_CAMPAIGNS, QOOLLINE_COUNTRIES, generateWithOpenAI, getOpenAIKey, setOpenAIKey, hasOpenAIKey } from '../services/qoollineService';
 import { downloadBase64Image, downloadMultipleImages } from '../services/downloadService';
 import CampaignFactory from './qoolline/CampaignFactory';
@@ -173,18 +173,17 @@ KORU:
         continue;
       }
 
-      // 9:16 ADAPT — Gemini adaptMasterToFormat
+      // 9:16 ADAPT — Kie AI Nano Banana Pro (master as reference, same prompt, different aspect ratio)
       for (const fmt of adaptFormats) {
         const adaptResultId = initResults.find(r => r.campaignId === campaign.id && r.format === fmt)?.id;
         if (!adaptResultId || !masterImage) continue;
 
         setResults(prev => prev.map(r => r.id === adaptResultId ? { ...r, status: 'generating' } : r));
-        log(`  📐 Gemini ile adapt ediliyor: [${masterFormat} → ${fmt}]`);
+        log(`  📐 Kie AI ile adapt ediliyor: [${masterFormat} → ${fmt}]`);
 
         try {
-          const adapted = await adaptMasterToFormat(
-            masterImage, bp, brand, campaign.core, fmt, masterFormat, null
-          );
+          const adaptPrompt = `Bu görselin ${fmt} formatına adaptasyonunu yap. BIREBIR AYNI tasarım dili, renkler, metinler, objeler. Sadece aspect ratio değişiyor: ${masterFormat} → ${fmt}.`;
+          const adapted = await generateWithOpenAI(masterImage, adaptPrompt, fmt);
           setResults(prev => prev.map(r => r.id === adaptResultId ? { ...r, status: 'completed', imageBase64: adapted } : r));
           log(`  ✓ Adaptasyon tamamlandi [${fmt}]`);
           addToHistory({ id: `q-${adaptResultId}`, url: adapted, promptUsed: campaign.type, brandId: brand.id, createdAt: Date.now() });
@@ -260,7 +259,7 @@ KORU:
             <div className="w-8 h-8 rounded-lg bg-[#F8BE00]/20 flex items-center justify-center"><Zap size={18} className="text-[#F8BE00]" /></div>
             Qoolline Hub
           </h2>
-          <p className="text-sm text-slate-400 mt-1">Gemini analiz + OpenAI uretim + Gemini adapt</p>
+          <p className="text-sm text-slate-400 mt-1">Gemini analiz + Kie AI Nano Banana Pro uretim</p>
         </div>
         <div className="flex items-center gap-2">
           <button onClick={() => setShowKeyInput(!showKeyInput)} className="p-2 rounded-lg bg-lumina-900 border border-lumina-800 text-slate-400 hover:text-white"><Key size={14} /></button>
