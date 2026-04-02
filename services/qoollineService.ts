@@ -185,22 +185,8 @@ export const generateWithOpenAI = async (
   editPrompt: string,
   aspectRatio: string,
 ): Promise<string> => {
-  // Upload reference to fal.ai storage
-  const imgBytes = Uint8Array.from(atob(referenceImageBase64), c => c.charCodeAt(0));
-
-  const initRes = await fetch('https://rest.alpha.fal.ai/storage/upload/initiate', {
-    method: 'POST',
-    headers: { 'Authorization': `Key ${FAL_KEY}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ file_name: 'ref.jpg', content_type: 'image/jpeg' }),
-  });
-  const { file_url, upload_url } = await initRes.json();
-  if (!file_url || !upload_url) throw new Error('Fal AI upload baslatilamadi');
-
-  await fetch(upload_url, { method: 'PUT', headers: { 'Content-Type': 'image/jpeg' }, body: imgBytes });
-  const publicUrl = file_url;
-
-  // Fal AI Nano Banana Pro — queue mode
-  const submitRes = await fetch('https://queue.fal.run/fal-ai/nano-banana-pro/edit', {
+  // Use fal.ai gateway (CORS-safe) — synchronous mode
+  const submitRes = await fetch('https://fal.run/fal-ai/nano-banana-pro/edit', {
     method: 'POST',
     headers: {
       'Authorization': `Key ${FAL_KEY}`,
@@ -208,44 +194,27 @@ export const generateWithOpenAI = async (
     },
     body: JSON.stringify({
       prompt: editPrompt,
-      image_urls: [publicUrl],
+      image_urls: [`data:image/jpeg;base64,${referenceImageBase64}`],
       aspect_ratio: aspectRatio,
       resolution: '2K',
       num_images: 1,
     }),
   });
 
-  const submitData = await submitRes.json();
-  const requestId = submitData.request_id;
-  if (!requestId) throw new Error(submitData.detail || 'Fal AI task olusturulamadi');
-
-  // Poll for result
-  for (let i = 0; i < 60; i++) {
-    await new Promise(r => setTimeout(r, 3000));
-    const statusRes = await fetch(`https://queue.fal.run/fal-ai/nano-banana-pro/edit/requests/${requestId}/status`, {
-      headers: { 'Authorization': `Key ${FAL_KEY}` },
-    });
-    const statusData = await statusRes.json();
-
-    if (statusData.status === 'COMPLETED') {
-      // Get result
-      const resultRes = await fetch(`https://queue.fal.run/fal-ai/nano-banana-pro/edit/requests/${requestId}`, {
-        headers: { 'Authorization': `Key ${FAL_KEY}` },
-      });
-      const resultData = await resultRes.json();
-      const imageUrl = resultData.images?.[0]?.url;
-      if (imageUrl) {
-        const imgRes = await fetch(imageUrl);
-        const imgBlob = await imgRes.blob();
-        const buf = await imgBlob.arrayBuffer();
-        return btoa(String.fromCharCode(...new Uint8Array(buf)));
-      }
-      throw new Error('Gorsel URL bulunamadi');
-    } else if (statusData.status === 'FAILED') {
-      throw new Error('Fal AI uretim basarisiz');
-    }
+  if (!submitRes.ok) {
+    const errText = await submitRes.text();
+    throw new Error(`Fal AI hata (${submitRes.status}): ${errText.slice(0, 200)}`);
   }
-  throw new Error('Timeout');
+
+  const resultData = await submitRes.json();
+  const imageUrl = resultData.images?.[0]?.url;
+  if (!imageUrl) throw new Error('Gorsel URL bulunamadi: ' + JSON.stringify(resultData).slice(0, 200));
+
+  // Download result image
+  const imgRes = await fetch(imageUrl);
+  const imgBlob = await imgRes.blob();
+  const buf = await imgBlob.arrayBuffer();
+  return btoa(String.fromCharCode(...new Uint8Array(buf)));
 };
 
 // ═══ SIMPLE GENERATE — 8 layer style analysis + reference image + texts ═══
