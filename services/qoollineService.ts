@@ -266,7 +266,7 @@ export const generateWithOpenAI = async (
   // Fal AI sync endpoint
   let submitRes: Response;
   try {
-    submitRes = await fetch('https://fal.run/fal-ai/nano-banana-pro/edit', {
+    submitRes = await fetch('https://fal.run/fal-ai/nano-banana-2/edit', {
       method: 'POST',
       headers: {
         'Authorization': `Key ${FAL_KEY}`,
