@@ -165,6 +165,77 @@ function getAI(): GoogleGenAI {
   return new GoogleGenAI({ apiKey: key });
 }
 
+// ═══ CAMPAIGN TEMPLATE GENERATOR AGENT ═══
+export const generateCampaignTemplates = async (
+  brand: Brand,
+  count: number = 6,
+  existingCampaigns: QoollineCampaign[] = [],
+  style?: string,
+): Promise<QoollineCampaign[]> => {
+  const ai = getAI();
+
+  const existingList = existingCampaigns.length > 0
+    ? `\nMEVCUT KAMPANYALAR (bunlardan esinlen ama KOPYALAMA, farkli acilar bul):\n${existingCampaigns.map(c => `- ${c.type}: "${c.core}" / "${c.supporting}" / CTA: "${c.cta}"`).join('\n')}`
+    : '';
+
+  const response = await ai.models.generateContent({
+    model: 'gemini-3-pro-preview',
+    contents: {
+      parts: [{
+        text: `Sen ${brand.name} markasi icin dunya capinda kampanya stratejisti ve kreatif direktorsun.
+
+MARKA:
+- Ad: ${brand.name}
+- Sektor: ${brand.industry}
+- Aciklama: ${brand.description || ''}
+- Ton: ${brand.tone}
+- Dil: ${brand.outputLanguage === 'tr' ? 'Turkce' : 'Ingilizce'}
+${existingList}
+${style ? `\nISTENEN STIL: ${style}` : ''}
+
+${count} adet FARKLI kampanya sablonu olustur. Her biri:
+- Farkli bir aci, farkli bir duygu, farkli bir hedef kitleye hitap etmeli
+- Klas, kurumsal ama ince mesajlar icermeli
+- Kisa, vurucu, akilda kalici basliklar
+- Destekleyici metin ana mesaji guclendirmeli
+- CTA net ve aksiyona yonlendirici olmali
+
+Kampanya tipleri cesiitli olsun: Performance, Branding, Awareness, Seasonal, Emotional, Trust, Social Proof, FOMO, Educational, Lifestyle gibi.
+
+JSON array olarak don:
+[
+  {
+    "type": "kampanya tipi",
+    "core": "ana baslik",
+    "supporting": "destek metin",
+    "cta": "CTA butonu",
+    "extra": "ekstra bilgi",
+    "notes": "kreatif yonlendirme notu"
+  }
+]
+
+SADECE JSON array don, baska bir sey yazma.`
+      }]
+    },
+    config: { responseMimeType: 'application/json' }
+  });
+
+  try {
+    const parsed = JSON.parse(response.text || '[]');
+    return parsed.map((c: any, i: number) => ({
+      id: `generated-${Date.now()}-${i}`,
+      type: c.type || 'Custom',
+      core: c.core || '',
+      supporting: c.supporting || '',
+      cta: c.cta || 'Learn More',
+      extra: c.extra || '',
+      notes: c.notes || '',
+    }));
+  } catch {
+    return [];
+  }
+};
+
 // ═══ OPENAI API KEY MANAGEMENT ═══
 const OPENAI_KEY_STORAGE = 'qoolline_openai_api_key';
 export function getOpenAIKey(): string {

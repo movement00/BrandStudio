@@ -1,8 +1,9 @@
 import React, { useState } from 'react';
 import { Check, Zap, Upload, X, Plus } from 'lucide-react';
 import { Brand, QoollineCampaign, PipelineImage } from '../../types';
-import { QOOLLINE_CAMPAIGNS } from '../../services/qoollineService';
+import { QOOLLINE_CAMPAIGNS, generateCampaignTemplates } from '../../services/qoollineService';
 import { resizeImageToRawBase64 } from '../../services/geminiService';
+import { Loader2, Sparkles } from 'lucide-react';
 
 interface CampaignFactoryProps {
   brand: Brand;
@@ -28,6 +29,9 @@ const CampaignFactory: React.FC<CampaignFactoryProps> = ({ brand, onStartGenerat
   const [customCta, setCustomCta] = useState('');
   const [customExtra, setCustomExtra] = useState('');
   const [customType, setCustomType] = useState('Custom');
+  const [isGeneratingTemplates, setIsGeneratingTemplates] = useState(false);
+  const [templateCount, setTemplateCount] = useState(6);
+  const [templateStyle, setTemplateStyle] = useState('');
 
   const toggleCampaign = (id: string) => {
     setSelectedCampaigns(prev => { const next = new Set(prev); if (next.has(id)) next.delete(id); else next.add(id); return next; });
@@ -68,6 +72,19 @@ const CampaignFactory: React.FC<CampaignFactoryProps> = ({ brand, onStartGenerat
   const removeCustomCampaign = (id: string) => {
     setCustomCampaigns(prev => prev.filter(c => c.id !== id));
     setSelectedCampaigns(prev => { const n = new Set(prev); n.delete(id); return n; });
+  };
+
+  const handleGenerateTemplates = async () => {
+    setIsGeneratingTemplates(true);
+    try {
+      const generated = await generateCampaignTemplates(brand, templateCount, [...QOOLLINE_CAMPAIGNS, ...customCampaigns], templateStyle || undefined);
+      setCustomCampaigns(prev => [...prev, ...generated]);
+      generated.forEach(c => setSelectedCampaigns(prev => new Set(prev).add(c.id)));
+    } catch (err: any) {
+      console.error('Template generation error:', err);
+      alert('Sablon uretimi basarisiz: ' + err.message);
+    }
+    setIsGeneratingTemplates(false);
   };
 
   return (
@@ -152,6 +169,20 @@ const CampaignFactory: React.FC<CampaignFactoryProps> = ({ brand, onStartGenerat
           <Plus size={14} /> Ozel Kampanya Ekle
         </button>
       )}
+
+      {/* AI Template Generator */}
+      <div className="p-3 bg-lumina-950 border border-lumina-800 rounded-lg">
+        <div className="flex items-center justify-between mb-2">
+          <h3 className="text-xs font-medium text-white flex items-center gap-1.5"><Sparkles size={12} className="text-lumina-gold" /> AI Sablon Uret</h3>
+          <select value={templateCount} onChange={e => setTemplateCount(Number(e.target.value))} className="bg-lumina-900 border border-lumina-800 rounded px-2 py-1 text-[10px] text-white">
+            <option value={3}>3</option><option value={6}>6</option><option value={10}>10</option>
+          </select>
+        </div>
+        <input type="text" value={templateStyle} onChange={e => setTemplateStyle(e.target.value)} placeholder="Stil yonlendirmesi (opsiyonel): orn. seasonal, emotional, luxury..." className="w-full bg-lumina-900 border border-lumina-800 rounded px-2 py-1.5 text-[11px] text-white focus:outline-none placeholder-slate-600 mb-2" />
+        <button onClick={handleGenerateTemplates} disabled={isGeneratingTemplates} className="w-full py-2 bg-lumina-gold/10 text-lumina-gold border border-lumina-gold/30 rounded-lg text-xs font-bold hover:bg-lumina-gold/20 transition-all disabled:opacity-30 flex items-center justify-center gap-1.5">
+          {isGeneratingTemplates ? <><Loader2 size={12} className="animate-spin" /> Uretiliyor...</> : <><Sparkles size={12} /> {templateCount} Sablon Uret</>}
+        </button>
+      </div>
 
       {/* Format Selection */}
       <div>
