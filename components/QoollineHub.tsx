@@ -3,6 +3,7 @@ import { Zap, Sparkles, Loader2, Download, FileText, Clock, XCircle, Edit2, Send
 import { Brand, GeneratedAsset, QoollineCampaign, PipelineImage } from '../types';
 import { analyzeImageStyle, matchTopicsToStyles, reviseGeneratedImage, resizeImageToRawBase64 } from '../services/geminiService';
 import { QOOLLINE_CAMPAIGNS, generateWithOpenAI, getOpenAIKey, setOpenAIKey, hasOpenAIKey } from '../services/qoollineService';
+import { generateBrandedImage } from '../services/geminiService';
 import { downloadBase64Image, downloadMultipleImages } from '../services/downloadService';
 import CampaignFactory from './qoolline/CampaignFactory';
 import CopywritingPanel from './qoolline/CopywritingPanel';
@@ -33,6 +34,9 @@ const QoollineHub: React.FC<QoollineHubProps> = ({ brand, addToHistory }) => {
   const [revisionPrompts, setRevisionPrompts] = useState<Record<string, string>>({});
   const [revisionImages, setRevisionImages] = useState<Record<string, string>>({});
   const [revisingIds, setRevisingIds] = useState<Set<string>>(new Set());
+
+  // Engine toggle
+  const [useOpenAI, setUseOpenAI] = useState(true);
 
   // OpenAI Key
   const [openaiKey, setOpenaiKeyState] = useState(getOpenAIKey());
@@ -134,15 +138,21 @@ GÖRSEL ANALİZİ (koru):
 
 DEĞİŞTİR:
 - Metinler → Başlık: "${campaign.core}", Destek: "${campaign.supporting}", CTA: "${campaign.cta}", Ekstra: "${campaign.extra}"
-- Logo → "${brand.name}"
-- Renkler → ${brand.palette.map(c => `${c.name}: ${c.hex}`).join(', ')}
+- Logo → "${brand.name}" logosunu/adını görsele ekle (${brand.logo ? 'verilen logoyu kullan' : 'metin olarak yaz'})
+- Objelerin renklerini marka paletine uyarla: ${brand.palette.map(c => `${c.name}: ${c.hex}`).join(', ')}
 
 KORU:
-- Tüm objeler, kişiler, nesneler aynı kalsın
+- Tüm objeler, kişiler, nesneler aynı kalsın (sadece renkleri değişebilir)
 - Kompozisyon ve yerleşim aynı kalsın`;
 
         try {
-          const image = await generateWithOpenAI(matchedRef.base64, editPrompt, fmt);
+          let image: string;
+          if (useOpenAI && hasOpenAIKey()) {
+            image = await generateWithOpenAI(matchedRef.base64, editPrompt, fmt);
+          } else {
+            const context = `${campaign.core}. ${campaign.supporting}. CTA: ${campaign.cta}. ${campaign.extra}`;
+            image = await generateBrandedImage(brand, style, matchedRef.base64, brand.logo || null, context, fmt);
+          }
           setResults(prev => prev.map(r => r.id === resultId ? { ...r, status: 'completed', imageBase64: image } : r));
           log(`  ✓ Tamamlandi [${fmt}]`);
           addToHistory({ id: `q-${resultId}`, url: image, promptUsed: campaign.type, brandId: brand.id, createdAt: Date.now() });
@@ -215,9 +225,12 @@ KORU:
             <div className="w-8 h-8 rounded-lg bg-[#F8BE00]/20 flex items-center justify-center"><Zap size={18} className="text-[#F8BE00]" /></div>
             Qoolline Hub
           </h2>
-          <p className="text-sm text-slate-400 mt-1">OpenAI GPT-4o ile gorsel uretim</p>
+          <p className="text-sm text-slate-400 mt-1">{useOpenAI ? 'OpenAI GPT-4o' : 'Gemini'} ile gorsel uretim</p>
         </div>
         <div className="flex items-center gap-2">
+          <button onClick={() => setUseOpenAI(!useOpenAI)} className={`px-3 py-2 rounded-lg border text-xs font-medium transition-all ${useOpenAI ? 'bg-green-500/20 border-green-500/30 text-green-400' : 'bg-lumina-900 border-lumina-800 text-slate-400'}`}>
+            {useOpenAI ? 'OpenAI' : 'Gemini'}
+          </button>
           <button onClick={() => setShowKeyInput(!showKeyInput)} className="p-2 rounded-lg bg-lumina-900 border border-lumina-800 text-slate-400 hover:text-white"><Key size={14} /></button>
           {results.some(r => r.imageBase64) && (
             <button onClick={handleDownloadAll} className="flex items-center gap-2 px-4 py-2 bg-lumina-900 border border-lumina-800 rounded-lg text-xs text-white"><Download size={14} /> Tumunu Indir</button>
