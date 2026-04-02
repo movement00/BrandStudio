@@ -165,6 +165,52 @@ function getAI(): GoogleGenAI {
   return new GoogleGenAI({ apiKey: key });
 }
 
+// ═══ SIMPLE BLUEPRINT GENERATE — minimal prompt, max fidelity ═══
+export const generateFromBlueprint = async (
+  blueprintJson: string,
+  referenceImageBase64: string,
+  aspectRatio: string,
+  brandName: string,
+  logoBase64?: string | null,
+): Promise<string> => {
+  const ai = getAI();
+
+  const parts: any[] = [];
+
+  // Reference image first
+  parts.push({ text: "REFERANS GÖRSEL:" });
+  parts.push({ inlineData: { mimeType: 'image/png', data: referenceImageBase64 } });
+
+  // Logo if available
+  if (logoBase64) {
+    parts.push({ text: "MARKA LOGOSU:" });
+    parts.push({ inlineData: { mimeType: 'image/png', data: logoBase64 } });
+  }
+
+  // Minimal prompt + modified JSON
+  parts.push({ text: `Referans görseli, aşağıdaki JSON blueprint'indeki değişikliklere göre yeniden oluştur. Görselin genel havası, objeleri ve kompozisyonu aynı kalsın. Sadece JSON'daki metin ve renk değişikliklerini uygula. ${brandName} logosunu/adını görsele yerleştir.
+
+BLUEPRINT:
+${blueprintJson}` });
+
+  const response = await ai.models.generateContent({
+    model: 'gemini-3-pro-image-preview',
+    contents: { parts },
+    config: {
+      imageConfig: {
+        aspectRatio: aspectRatio as any,
+        imageSize: '2K',
+      },
+    },
+  });
+
+  const candidate = response.candidates?.[0];
+  if (!candidate) throw new Error('Yanıt alınamadı.');
+  const imagePart = candidate.content?.parts?.find((p: any) => p.inlineData);
+  if (!imagePart?.inlineData) throw new Error('Görsel oluşturulamadı.');
+  return imagePart.inlineData.data;
+};
+
 // ═══ CAMPAIGN TEMPLATES ═══
 export const QOOLLINE_CAMPAIGNS: QoollineCampaign[] = [
   {
