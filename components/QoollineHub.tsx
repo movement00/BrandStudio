@@ -87,7 +87,10 @@ const QoollineHub: React.FC<QoollineHubProps> = ({ brand, addToHistory }) => {
           analyzeImageStyle(ref.base64),
         ]);
         refAnalyses.push({ id: ref.id, blueprint, style, base64: ref.base64 });
-        log(`  ✓ (${i + 1}/${referenceImages.length}) ${ref.name}: ${blueprint.layers?.length || 0} katman, ${style.mood}`);
+        log(`  ✓ (${i + 1}/${referenceImages.length}) ${ref.name}: ${blueprint.layers?.length || 0} katman`);
+        log(`    Blueprint: ${blueprint.layout?.type || ''}, Renk: ${blueprint.colorSystem?.dominant || ''} / ${blueprint.colorSystem?.secondary || ''}`);
+        blueprint.layers?.forEach((l: any) => log(`    • [${l.type}] ${l.content?.slice(0, 50) || ''} (${l.position?.anchor || l.position?.y || ''})`));
+        log(`    Stil: ${style.mood}, ${style.artisticStyle}`);
       } catch (err: any) {
         log(`  ✗ (${i + 1}/${referenceImages.length}) ${ref.name}: ${err.message}`);
       }
@@ -159,7 +162,7 @@ KORU:
       if (!masterResultId) continue;
 
       setResults(prev => prev.map(r => r.id === masterResultId ? { ...r, status: 'generating' } : r));
-      log(`🎨 OpenAI master uretiliyor: "${campaign.type}" [${masterFormat}]`);
+      log(`🎨 Kie AI Nano Banana Pro ile uretiliyor: "${campaign.type}" [${masterFormat}]`);
 
       let masterImage: string | null = null;
       try {
