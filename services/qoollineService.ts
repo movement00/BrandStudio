@@ -177,16 +177,15 @@ export function hasOpenAIKey(): boolean {
   return getOpenAIKey().length > 0;
 }
 
-// ═══ KIE AI Nano Banana Pro — Blueprint-based generation with reference ═══
+// ═══ FAL AI Nano Banana Pro — Blueprint-based generation with reference ═══
+const FAL_KEY = '729373d1-5cb9-43ae-bac2-f298a5101cb6:b78570140f86fdc36f4915d8614edf4c';
+
 export const generateWithOpenAI = async (
   referenceImageBase64: string,
   editPrompt: string,
   aspectRatio: string,
 ): Promise<string> => {
-  const key = getOpenAIKey();
-  if (!key) throw new Error('API_KEY_MISSING — Kie AI key giriniz');
-
-  // Upload reference image to get public URL
+  // Upload reference to get public URL
   const uploadForm = new FormData();
   uploadForm.append('reqtype', 'fileupload');
   uploadForm.append('time', '1h');
@@ -196,46 +195,50 @@ export const generateWithOpenAI = async (
   const publicUrl = (await uploadRes.text()).trim();
   if (!publicUrl.startsWith('http')) throw new Error('Gorsel yuklenemedi');
 
-  // Kie AI Nano Banana Pro — with reference image
-  const createRes = await fetch('https://api.kie.ai/api/v1/jobs/createTask', {
+  // Fal AI Nano Banana Pro — queue mode
+  const submitRes = await fetch('https://queue.fal.run/fal-ai/nano-banana-pro/edit', {
     method: 'POST',
-    headers: { 'Authorization': `Bearer ${key}`, 'Content-Type': 'application/json' },
+    headers: {
+      'Authorization': `Key ${FAL_KEY}`,
+      'Content-Type': 'application/json',
+    },
     body: JSON.stringify({
-      model: 'nano-banana-pro',
-      input: {
-        prompt: editPrompt,
-        image_input: [publicUrl],
-        aspect_ratio: aspectRatio,
-        resolution: '2K',
-        output_format: 'png',
-      },
+      prompt: editPrompt,
+      image_urls: [publicUrl],
+      aspect_ratio: aspectRatio,
+      resolution: '2K',
+      num_images: 1,
     }),
   });
 
-  const createData = await createRes.json();
-  if (createData.code !== 200) throw new Error(createData.msg || 'Task olusturulamadi');
-  const taskId = createData.data?.taskId;
-  if (!taskId) throw new Error('Task ID alinamadi');
+  const submitData = await submitRes.json();
+  const requestId = submitData.request_id;
+  if (!requestId) throw new Error(submitData.detail || 'Fal AI task olusturulamadi');
 
-  // Poll for result (unified endpoint)
-  for (let i = 0; i < 50; i++) {
-    await new Promise(r => setTimeout(r, 4000));
-    const statusRes = await fetch(`https://api.kie.ai/api/v1/jobs/getTaskDetails?taskId=${taskId}`, {
-      headers: { 'Authorization': `Bearer ${key}` },
+  // Poll for result
+  for (let i = 0; i < 60; i++) {
+    await new Promise(r => setTimeout(r, 3000));
+    const statusRes = await fetch(`https://queue.fal.run/fal-ai/nano-banana-pro/edit/requests/${requestId}/status`, {
+      headers: { 'Authorization': `Key ${FAL_KEY}` },
     });
     const statusData = await statusRes.json();
-    const task = statusData.data;
-    if (task?.status === 'SUCCESS' || task?.successFlag === 1) {
-      const urls = task?.response?.resultUrls || task?.output?.images || [];
-      const resultUrl = typeof urls === 'string' ? urls : (urls[0]?.url || urls[0]);
-      if (resultUrl) {
-        const imgRes = await fetch(resultUrl);
+
+    if (statusData.status === 'COMPLETED') {
+      // Get result
+      const resultRes = await fetch(`https://queue.fal.run/fal-ai/nano-banana-pro/edit/requests/${requestId}`, {
+        headers: { 'Authorization': `Key ${FAL_KEY}` },
+      });
+      const resultData = await resultRes.json();
+      const imageUrl = resultData.images?.[0]?.url;
+      if (imageUrl) {
+        const imgRes = await fetch(imageUrl);
         const imgBlob = await imgRes.blob();
         const buf = await imgBlob.arrayBuffer();
         return btoa(String.fromCharCode(...new Uint8Array(buf)));
       }
-    } else if (task?.status === 'FAILED' || task?.successFlag === 2) {
-      throw new Error(task?.errorMessage || 'Uretim basarisiz');
+      throw new Error('Gorsel URL bulunamadi');
+    } else if (statusData.status === 'FAILED') {
+      throw new Error('Fal AI uretim basarisiz');
     }
   }
   throw new Error('Timeout');
