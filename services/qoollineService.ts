@@ -185,32 +185,62 @@ export const generateWithOpenAI = async (
   editPrompt: string,
   aspectRatio: string,
 ): Promise<string> => {
-  // Use fal.ai gateway (CORS-safe) — synchronous mode
-  const submitRes = await fetch('https://fal.run/fal-ai/nano-banana-pro/edit', {
-    method: 'POST',
-    headers: {
-      'Authorization': `Key ${FAL_KEY}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      prompt: editPrompt,
-      image_urls: [`data:image/jpeg;base64,${referenceImageBase64}`],
-      aspect_ratio: aspectRatio,
-      resolution: '2K',
-      num_images: 1,
-    }),
+  // Resize reference image to reduce payload size
+  const canvas = document.createElement('canvas');
+  const img = new Image();
+  await new Promise<void>((resolve) => {
+    img.onload = () => {
+      const maxSize = 800;
+      let w = img.width, h = img.height;
+      if (w > maxSize || h > maxSize) {
+        if (w > h) { h = Math.round(h * maxSize / w); w = maxSize; }
+        else { w = Math.round(w * maxSize / h); h = maxSize; }
+      }
+      canvas.width = w;
+      canvas.height = h;
+      canvas.getContext('2d')!.drawImage(img, 0, 0, w, h);
+      resolve();
+    };
+    img.src = `data:image/jpeg;base64,${referenceImageBase64}`;
   });
+  const smallBase64 = canvas.toDataURL('image/jpeg', 0.7).split(',')[1];
 
-  if (!submitRes.ok) {
-    const errText = await submitRes.text();
-    throw new Error(`Fal AI hata (${submitRes.status}): ${errText.slice(0, 200)}`);
+  // Fal AI sync endpoint
+  let submitRes: Response;
+  try {
+    submitRes = await fetch('https://fal.run/fal-ai/nano-banana-pro/edit', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Key ${FAL_KEY}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        prompt: editPrompt,
+        image_urls: [`data:image/jpeg;base64,${smallBase64}`],
+        aspect_ratio: aspectRatio,
+        resolution: '2K',
+        num_images: 1,
+      }),
+    });
+  } catch (fetchErr: any) {
+    throw new Error(`Fal AI baglanti hatasi: ${fetchErr.message}`);
   }
 
-  const resultData = await submitRes.json();
-  const imageUrl = resultData.images?.[0]?.url;
-  if (!imageUrl) throw new Error('Gorsel URL bulunamadi: ' + JSON.stringify(resultData).slice(0, 200));
+  const responseText = await submitRes.text();
+  if (!responseText) throw new Error(`Fal AI bos yanit (status: ${submitRes.status})`);
 
-  // Download result image
+  let resultData: any;
+  try {
+    resultData = JSON.parse(responseText);
+  } catch {
+    throw new Error(`Fal AI JSON parse hatasi: ${responseText.slice(0, 200)}`);
+  }
+
+  if (!submitRes.ok) throw new Error(`Fal AI hata (${submitRes.status}): ${resultData.detail || responseText.slice(0, 200)}`);
+
+  const imageUrl = resultData.images?.[0]?.url;
+  if (!imageUrl) throw new Error('Gorsel URL bulunamadi');
+
   const imgRes = await fetch(imageUrl);
   const imgBlob = await imgRes.blob();
   const buf = await imgBlob.arrayBuffer();
