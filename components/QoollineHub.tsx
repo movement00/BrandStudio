@@ -1,8 +1,8 @@
 import React, { useState, useCallback, useRef, useEffect } from 'react';
 import { Zap, Sparkles, Loader2, Download, FileText, Clock, XCircle, Edit2, Send, Upload, RefreshCw, Key } from 'lucide-react';
 import { Brand, GeneratedAsset, QoollineCampaign, PipelineImage } from '../types';
-import { resizeImageToRawBase64 } from '../services/geminiService';
-import { QOOLLINE_CAMPAIGNS, generateWithOpenAI, analyzeWithOpenAI, getOpenAIKey, setOpenAIKey, hasOpenAIKey } from '../services/qoollineService';
+import { analyzeImageStyle, reviseGeneratedImage, resizeImageToRawBase64 } from '../services/geminiService';
+import { QOOLLINE_CAMPAIGNS, generateWithOpenAI, getOpenAIKey, setOpenAIKey, hasOpenAIKey } from '../services/qoollineService';
 import { downloadBase64Image, downloadMultipleImages } from '../services/downloadService';
 import CampaignFactory from './qoolline/CampaignFactory';
 import CopywritingPanel from './qoolline/CopywritingPanel';
@@ -72,25 +72,20 @@ const QoollineHub: React.FC<QoollineHubProps> = ({ brand, addToHistory }) => {
 
     log(`Uretim baslatildi: ${campaigns.length} kampanya x ${formats.length} format`);
 
-    // Step 1: OpenAI ile katman analizi
-    log('OpenAI GPT-4o ile katman analizi yapiliyor...');
-    let blueprint: any = null;
+    // Step 1: Gemini ile 8 katmanli stil analizi
+    log('Gemini ile stil analizi yapiliyor...');
+    let styleAnalysis: any;
     try {
-      blueprint = await analyzeWithOpenAI(referenceImages[0].base64);
-      const layerCount = blueprint.layers?.length || 0;
-      log(`  ✓ ${layerCount} katman tespit edildi`);
-      if (blueprint.composition) log(`  → Kompozisyon: ${blueprint.composition}`);
-      if (blueprint.mood) log(`  → Mood: ${blueprint.mood}`);
-      if (blueprint.layers) {
-        blueprint.layers.forEach((l: any) => {
-          log(`    • [${l.type}] ${l.content} (${l.position})`);
-        });
-      }
+      styleAnalysis = await analyzeImageStyle(referenceImages[0].base64);
+      log(`  ✓ Analiz tamamlandi: ${styleAnalysis.mood}, ${styleAnalysis.artisticStyle}`);
+      log(`  → Kompozisyon: ${styleAnalysis.composition}`);
+      log(`  → Arka Plan: ${styleAnalysis.backgroundDetails}`);
     } catch (err: any) {
       log(`  ✗ Analiz hatasi: ${err.message}. Analizsiz devam ediliyor.`);
+      styleAnalysis = null;
     }
 
-    // Step 2: Her kampanya x format icin OpenAI ile edit
+    // Step 2: Her kampanya x format icin OpenAI ile uretim
     for (const campaign of campaigns) {
       for (const fmt of formats) {
         const resultId = initResults.find(r => r.campaignId === campaign.id && r.format === fmt)?.id;
@@ -99,39 +94,30 @@ const QoollineHub: React.FC<QoollineHubProps> = ({ brand, addToHistory }) => {
         setResults(prev => prev.map(r => r.id === resultId ? { ...r, status: 'generating' } : r));
         log(`🎨 OpenAI ile uretiliyor: "${campaign.type}" [${fmt}]`);
 
-        // Build layer-specific edit instructions
-        let layerInstructions = '';
-        if (blueprint?.layers) {
-          const textLayers = blueprint.layers.filter((l: any) => l.type === 'text' || l.type === 'logo' || l.type === 'button');
-          const campaignTexts = [campaign.core, campaign.supporting, campaign.cta, campaign.extra].filter(Boolean);
+        const styleSection = styleAnalysis ? `
+GÖRSEL ANALİZİ (bu katmanları koru):
+- Kompozisyon: ${styleAnalysis.composition}
+- Işıklandırma: ${styleAnalysis.lighting}
+- Renk atmosferi: ${styleAnalysis.colorPaletteDescription}
+- Mood: ${styleAnalysis.mood}
+- Doku: ${styleAnalysis.textureDetails}
+- Kamera açısı: ${styleAnalysis.cameraAngle}
+- Stil: ${styleAnalysis.artisticStyle}
+- Arka plan: ${styleAnalysis.backgroundDetails}` : '';
 
-          layerInstructions = '\nKATMAN BAZLI DEĞİŞİKLİKLER:\n';
-          textLayers.forEach((layer: any, i: number) => {
-            if (layer.type === 'logo') {
-              layerInstructions += `- "${layer.content}" (${layer.position}) → "${brand.name}" olarak değiştir\n`;
-            } else if (layer.type === 'button') {
-              layerInstructions += `- "${layer.content}" butonu (${layer.position}) → "${campaign.cta}" olarak değiştir\n`;
-            } else if (i < campaignTexts.length) {
-              layerInstructions += `- "${layer.content}" (${layer.position}) → "${campaignTexts[i]}" olarak değiştir\n`;
-            }
-          });
+        const editPrompt = `Edit this image for the brand "${brand.name}".
+${styleSection}
 
-          const keepLayers = blueprint.layers.filter((l: any) => l.type === 'image' || l.type === 'icon' || l.type === 'decoration' || l.type === 'background');
-          if (keepLayers.length > 0) {
-            layerInstructions += '\nDEĞİŞTİRME — AYNEN KORU:\n';
-            keepLayers.forEach((layer: any) => {
-              layerInstructions += `- ${layer.type}: "${layer.content}" (${layer.position}) — dokunma\n`;
-            });
-          }
-        }
+DEĞİŞECEK KATMANLAR:
+- Tüm metin katmanları → Başlık: "${campaign.core}", Destek: "${campaign.supporting}", CTA Buton: "${campaign.cta}", Ekstra: "${campaign.extra}"
+- Logo katmanı → "${brand.name}"
+- Renk katmanları → Marka renkleri: ${brand.palette.map(c => `${c.name}: ${c.hex}`).join(', ')}
 
-        const editPrompt = `Bu görseli "${brand.name}" markası için düzenle.
-${layerInstructions}
-MARKA:
-- Logo: "${brand.name}"
-- Renkler: ${brand.palette.map(c => `${c.name}: ${c.hex}`).join(', ')}
-
-Görseldeki tüm objeleri (kişiler, nesneler, araçlar) AYNEN KORU. Sadece metinleri ve renkleri değiştir.`;
+DEĞİŞMEYECEK KATMANLAR:
+- Tüm objeler (kişiler, nesneler, araçlar, hayvanlar) aynı kalsın
+- Genel kompozisyon ve yerleşim aynı kalsın
+- Arka plan yapısı ve stili aynı kalsın
+- Objelerin renkleri marka paletine uyarlanabilir ama objelerin kendisi DEĞİŞMEMELİ`;
 
         try {
           const image = await generateWithOpenAI(referenceImages[0].base64, editPrompt, fmt);
