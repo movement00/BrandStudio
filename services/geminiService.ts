@@ -599,7 +599,7 @@ export const reconstructFromBlueprint = async (
   parts.push({ text: prompt });
 
   const response = await ai.models.generateContent({
-    model: 'gemini-3-pro-image-preview',
+    model: 'gemini-2.5-flash-image',
     contents: { parts },
     config: {
       imageConfig: {
@@ -739,7 +739,7 @@ export const adaptMasterToFormat = async (
   parts.push({ text: prompt });
 
   const response = await ai.models.generateContent({
-    model: 'gemini-3-pro-image-preview',
+    model: 'gemini-2.5-flash-image',
     contents: { parts },
     config: {
       imageConfig: {
@@ -1210,7 +1210,7 @@ export const generateBrandedImage = async (
   parts.push({ text: finalPrompt });
 
   const response = await ai.models.generateContent({
-    model: 'gemini-3-pro-image-preview',
+    model: 'gemini-2.5-flash-image',
     contents: { parts },
     config: {
       imageConfig: {
@@ -1306,7 +1306,7 @@ export const reviseGeneratedImage = async (
   parts.push({ text: prompt });
 
   const response = await ai.models.generateContent({
-    model: 'gemini-3-pro-image-preview',
+    model: 'gemini-2.5-flash-image',
     contents: { parts },
     config: {
       imageConfig: {
@@ -1398,7 +1398,7 @@ export const adaptRevisedToFormat = async (
   parts.push({ text: prompt });
 
   const response = await ai.models.generateContent({
-    model: 'gemini-3-pro-image-preview',
+    model: 'gemini-2.5-flash-image',
     contents: { parts },
     config: {
       imageConfig: {
@@ -2243,7 +2243,7 @@ export const generateCarouselSlide = async (
   parts.push({ text: prompt });
 
   const response = await ai.models.generateContent({
-    model: 'gemini-3-pro-image-preview',
+    model: 'gemini-2.5-flash-image',
     contents: { parts },
     config: {
       imageConfig: {
@@ -2398,7 +2398,7 @@ export const generateCleanBackground = async (
   parts.push({ text: prompt });
 
   const response = await ai.models.generateContent({
-    model: 'gemini-3-pro-image-preview',
+    model: 'gemini-2.5-flash-image',
     contents: { parts },
     config: { imageConfig: { aspectRatio, imageSize: "2K" } }
   });
