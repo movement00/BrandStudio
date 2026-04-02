@@ -270,7 +270,7 @@ KORU:
 
       {showKeyInput && (
         <div className="mb-4 p-4 bg-lumina-900 border border-lumina-800 rounded-xl">
-          <p className="text-xs text-white font-medium mb-2">OpenAI API Key</p>
+          <p className="text-xs text-white font-medium mb-2">Kie AI API Key</p>
           <div className="flex gap-2">
             <input type="password" value={openaiKey} onChange={e => setOpenaiKeyState(e.target.value)} placeholder="sk-proj-..." className="flex-1 bg-lumina-950 border border-lumina-800 rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-lumina-gold/50 placeholder-slate-600" />
             <button onClick={() => { setOpenAIKey(openaiKey.trim()); setShowKeyInput(false); }} disabled={!openaiKey.trim()} className="px-4 py-2 bg-lumina-gold/20 text-lumina-gold rounded-lg text-xs font-bold disabled:opacity-30">Kaydet</button>

@@ -177,48 +177,72 @@ export function hasOpenAIKey(): boolean {
   return getOpenAIKey().length > 0;
 }
 
-// ═══ OPENAI GPT-4o — Edit reference image with blueprint changes ═══
+// ═══ KIE AI GPT-4o Image — Edit with reference image ═══
 export const generateWithOpenAI = async (
   referenceImageBase64: string,
   editPrompt: string,
   aspectRatio: string,
 ): Promise<string> => {
   const key = getOpenAIKey();
-  if (!key) throw new Error('OPENAI_KEY_MISSING');
+  if (!key) throw new Error('API_KEY_MISSING — Kie AI veya OpenAI key giriniz');
 
-  const size = aspectRatio === '9:16' || aspectRatio === '4:5' || aspectRatio === '2:3' ? '1024x1536'
-    : aspectRatio === '16:9' || aspectRatio === '3:2' ? '1536x1024'
-    : '1024x1024';
-
-  const response = await fetch('https://api.openai.com/v1/responses', {
+  // First try Kie AI (GPT-4o Image with reference)
+  // Upload reference to get public URL
+  const uploadRes = await fetch('https://litterbox.catbox.moe/resources/internals/api.php', {
     method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${key}`,
-      'Content-Type': 'application/json',
-    },
+    body: (() => {
+      const form = new FormData();
+      form.append('reqtype', 'fileupload');
+      form.append('time', '1h');
+      const blob = new Blob([Uint8Array.from(atob(referenceImageBase64), c => c.charCodeAt(0))], { type: 'image/jpeg' });
+      form.append('fileToUpload', blob, 'ref.jpg');
+      return form;
+    })(),
+  });
+  const publicUrl = await uploadRes.text();
+
+  // Kie AI GPT-4o Image generate with reference
+  const size = aspectRatio === '9:16' || aspectRatio === '4:5' ? '2:3' : aspectRatio === '16:9' ? '3:2' : '1:1';
+
+  const createRes = await fetch('https://api.kie.ai/api/v1/gpt4o-image/generate', {
+    method: 'POST',
+    headers: { 'Authorization': `Bearer ${key}`, 'Content-Type': 'application/json' },
     body: JSON.stringify({
-      model: 'gpt-4o',
-      input: [
-        {
-          role: 'user',
-          content: [
-            { type: 'input_image', image_url: `data:image/jpeg;base64,${referenceImageBase64}` },
-            { type: 'input_text', text: editPrompt },
-          ],
-        },
-      ],
-      tools: [{ type: 'image_generation', size, quality: 'high' }],
+      prompt: editPrompt,
+      size,
+      nVariants: 1,
+      isEnhance: false,
+      filesUrl: [publicUrl.trim()],
     }),
   });
 
-  const data = await response.json();
-  if (data.error) throw new Error(data.error.message || 'API error');
+  const createData = await createRes.json();
+  if (createData.code !== 200) throw new Error(createData.msg || 'Kie AI task olusturulamadi');
+  const taskId = createData.data?.taskId;
+  if (!taskId) throw new Error('Task ID alinamadi');
 
-  // Extract image from response
-  const imgOutput = data.output?.find((o: any) => o.type === 'image_generation_call');
-  if (imgOutput?.result) return imgOutput.result;
-
-  throw new Error('Görsel oluşturulamadı');
+  // Poll for result
+  for (let i = 0; i < 40; i++) {
+    await new Promise(r => setTimeout(r, 5000));
+    const statusRes = await fetch(`https://api.kie.ai/api/v1/gpt4o-image/record-info?taskId=${taskId}`, {
+      headers: { 'Authorization': `Bearer ${key}` },
+    });
+    const statusData = await statusRes.json();
+    if (statusData.data?.successFlag === 1) {
+      const urls = statusData.data?.response?.resultUrls || [];
+      if (urls.length > 0) {
+        // Download image and convert to base64
+        const imgRes = await fetch(urls[0]);
+        const imgBlob = await imgRes.blob();
+        const buf = await imgBlob.arrayBuffer();
+        const base64 = btoa(String.fromCharCode(...new Uint8Array(buf)));
+        return base64;
+      }
+    } else if (statusData.data?.successFlag === 2) {
+      throw new Error(statusData.data?.errorMessage || 'Uretim basarisiz');
+    }
+  }
+  throw new Error('Timeout — uretim cok uzun surdu');
 };
 
 // ═══ SIMPLE GENERATE — 8 layer style analysis + reference image + texts ═══
