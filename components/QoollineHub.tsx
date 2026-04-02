@@ -128,25 +128,36 @@ const QoollineHub: React.FC<QoollineHubProps> = ({ brand, addToHistory }) => {
 
       // Build detailed edit prompt from blueprint
       const textLayers = bp.layers?.filter((l: any) => l.type === 'text' || l.type === 'logo') || [];
-      const campaignTexts = [campaign.core, campaign.supporting, campaign.cta, campaign.extra].filter(Boolean);
 
       let layerEdits = '';
-      textLayers.forEach((l: any, i: number) => {
-        if (l.type === 'logo') {
-          layerEdits += `- "${l.content}" (${l.position?.anchor || l.position?.x || 'logo'}) → "${brand.name}"\n`;
-        } else if (i < campaignTexts.length) {
-          layerEdits += `- "${l.content}" (${l.position?.anchor || l.position?.y || ''}) → "${campaignTexts[i]}"\n`;
-        }
-      });
+      // Map existing text layers to campaign texts
+      if (textLayers.length > 0) {
+        layerEdits += 'MEVCUT METİNLERİ DEĞİŞTİR:\n';
+        let textIdx = 0;
+        const campaignTexts = [campaign.core, campaign.supporting, campaign.cta, campaign.extra].filter(Boolean);
+        textLayers.forEach((l: any) => {
+          if (l.type === 'logo') {
+            layerEdits += `- Logo "${l.content}" → "${brand.name}" olarak değiştir\n`;
+          } else if (textIdx < campaignTexts.length) {
+            layerEdits += `- Metin "${l.content}" → "${campaignTexts[textIdx]}" olarak değiştir\n`;
+            textIdx++;
+          }
+        });
+      }
+
+      // Always include campaign texts even if no text layers found
+      layerEdits += `\nKAMPANYA METİNLERİ (görselde mutlaka yer almalı):
+- Ana başlık: "${campaign.core}"
+- Destek metin: "${campaign.supporting}"
+- CTA butonu: "${campaign.cta}"
+- Ekstra bilgi: "${campaign.extra}"
+- Marka logosu/adı: "${brand.name}" (görselde mutlaka görünmeli)
+
+Eğer görselde metin yoksa, bu kampanya metinlerini uygun yerlere ekle.
+Eğer görselde metin varsa, yukarıdaki metinlerle değiştir.\n`;
 
       const editPrompt = `Bu görseli "${brand.name}" markası için düzenle.
 
-BLUEPRINT ANALİZİ:
-- Kompozisyon: ${bp.compositionNotes || bp.layout?.type || ''}
-- Stil: ${bp.canvas?.style || ''}
-- Katman sayısı: ${bp.layers?.length || 0}
-
-METİN DEĞİŞİKLİKLERİ:
 ${layerEdits}
 RENK DEĞİŞİKLİKLERİ:
 - Marka renkleri: ${brand.palette.map((c: any) => `${c.name}: ${c.hex}`).join(', ')}
@@ -154,8 +165,7 @@ RENK DEĞİŞİKLİKLERİ:
 
 KORU:
 - Tüm objeler, kişiler, nesneler aynı kalsın (sadece renkleri değişebilir)
-- Genel kompozisyon ve yerleşim aynı kalsın
-- Arka plan yapısı korunsun`;
+- Genel kompozisyon ve yerleşim aynı kalsın`;
 
       // 4:5 MASTER — OpenAI
       const masterResultId = initResults.find(r => r.campaignId === campaign.id && r.format === masterFormat)?.id;
@@ -166,7 +176,7 @@ KORU:
 
       let masterImage: string | null = null;
       try {
-        masterImage = await generateWithOpenAI(ref.base64, editPrompt, masterFormat);
+        masterImage = await generateWithOpenAI(ref.base64, editPrompt, masterFormat, brand.logo);
         setResults(prev => prev.map(r => r.id === masterResultId ? { ...r, status: 'completed', imageBase64: masterImage! } : r));
         log(`  ✓ Master tamamlandi [${masterFormat}]`);
         addToHistory({ id: `q-${masterResultId}`, url: masterImage, promptUsed: campaign.type, brandId: brand.id, createdAt: Date.now() });

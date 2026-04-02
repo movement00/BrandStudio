@@ -184,8 +184,15 @@ export const generateWithOpenAI = async (
   referenceImageBase64: string,
   editPrompt: string,
   aspectRatio: string,
+  logoBase64?: string | null,
 ): Promise<string> => {
-  // Fal AI sync endpoint — send reference as data URI
+  // Build image array — reference + optional logo
+  const imageUrls = [`data:image/jpeg;base64,${referenceImageBase64}`];
+  if (logoBase64) {
+    imageUrls.push(`data:image/png;base64,${logoBase64}`);
+  }
+
+  // Fal AI sync endpoint
   let submitRes: Response;
   try {
     submitRes = await fetch('https://fal.run/fal-ai/nano-banana-pro/edit', {
@@ -195,8 +202,8 @@ export const generateWithOpenAI = async (
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        prompt: editPrompt,
-        image_urls: [`data:image/jpeg;base64,${referenceImageBase64}`],
+        prompt: editPrompt + (logoBase64 ? '\n\nİkinci görsel marka logosudur. Bu logoyu görsele yerleştir.' : ''),
+        image_urls: imageUrls,
         aspect_ratio: aspectRatio,
         resolution: '2K',
         num_images: 1,
