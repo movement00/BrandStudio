@@ -1,8 +1,8 @@
 import React, { useState, useCallback, useRef, useEffect } from 'react';
 import { Zap, Sparkles, Loader2, Download, FileText, Clock, XCircle, Edit2, Send, Upload, RefreshCw } from 'lucide-react';
-import { Brand, GeneratedAsset, QoollineCampaign, PipelineImage, DesignBlueprint, BlueprintLayer } from '../types';
-import { decomposeToBlueprint, reviseGeneratedImage, resizeImageToRawBase64 } from '../services/geminiService';
-import { QOOLLINE_CAMPAIGNS, generateFromBlueprint } from '../services/qoollineService';
+import { Brand, GeneratedAsset, QoollineCampaign, PipelineImage, StyleAnalysis } from '../types';
+import { analyzeImageStyle, reviseGeneratedImage, resizeImageToRawBase64 } from '../services/geminiService';
+import { QOOLLINE_CAMPAIGNS, generateFromStyleAnalysis } from '../services/qoollineService';
 import { downloadBase64Image, downloadMultipleImages } from '../services/downloadService';
 import CampaignFactory from './qoolline/CampaignFactory';
 import CopywritingPanel from './qoolline/CopywritingPanel';
@@ -62,57 +62,22 @@ const QoollineHub: React.FC<QoollineHubProps> = ({ brand, addToHistory }) => {
 
     log(`Uretim baslatildi: ${campaigns.length} kampanya x ${formats.length} format`);
 
-    // Step 1: Blueprint decompose for first reference
-    log('Blueprint ayristiriliyor...');
-    let blueprint: DesignBlueprint;
+    // Step 1: 8-layer style analysis
+    log('Stil analizi yapiliyor (8 katman)...');
+    let style: StyleAnalysis;
     try {
-      blueprint = await decomposeToBlueprint(referenceImages[0].base64);
-      log(`  ✓ ${blueprint.layers.length} katman tespit edildi`);
+      style = await analyzeImageStyle(referenceImages[0].base64);
+      log(`  ✓ Analiz tamamlandi: ${style.mood}`);
     } catch (err: any) {
-      log(`  ✗ Blueprint hatasi: ${err.message}`);
+      log(`  ✗ Analiz hatasi: ${err.message}`);
       setIsRunning(false);
       return;
     }
 
-    // Step 2: For each campaign, modify blueprint JSON + generate
+    const styleJson = JSON.stringify(style, null, 2);
+
+    // Step 2: For each campaign x format, generate with style + texts
     for (const campaign of campaigns) {
-      // Modify blueprint: replace text layer contents with campaign texts
-      const campaignTexts = [campaign.core, campaign.supporting, campaign.cta, campaign.extra].filter(Boolean);
-      const modifiedLayers = blueprint.layers.map((layer, i) => {
-        const l = { ...layer, style: { ...layer.style } };
-
-        // Replace text layers with campaign texts in order
-        if (l.type === 'text' || l.type === 'logo') {
-          const textIndex = blueprint.layers.filter((ll, j) => j < i && (ll.type === 'text' || ll.type === 'logo')).length;
-          if (l.type === 'logo') {
-            l.content = brand.name;
-          } else if (textIndex < campaignTexts.length) {
-            l.content = campaignTexts[textIndex];
-          }
-        }
-
-        // Remap colors to brand palette
-        if (l.type === 'background') {
-          l.style.color = brand.primaryColor;
-        }
-
-        return l;
-      });
-
-      const modifiedBlueprint = {
-        ...blueprint,
-        layers: modifiedLayers,
-        colorSystem: {
-          ...blueprint.colorSystem,
-          dominant: brand.primaryColor,
-          secondary: brand.secondaryColor,
-          accent: brand.palette[2]?.hex || brand.primaryColor,
-        },
-      };
-
-      const blueprintJson = JSON.stringify(modifiedBlueprint, null, 2);
-
-      // Generate for each format
       for (const fmt of formats) {
         const resultId = initResults.find(r => r.campaignId === campaign.id && r.format === fmt)?.id;
         if (!resultId) continue;
@@ -121,11 +86,12 @@ const QoollineHub: React.FC<QoollineHubProps> = ({ brand, addToHistory }) => {
         log(`🎨 Uretiliyor: "${campaign.type}" [${fmt}]`);
 
         try {
-          const image = await generateFromBlueprint(
-            blueprintJson,
+          const image = await generateFromStyleAnalysis(
+            styleJson,
             referenceImages[0].base64,
             fmt,
             brand.name,
+            { headline: campaign.core, supporting: campaign.supporting, cta: campaign.cta, extra: campaign.extra },
             brand.logo,
           );
           setResults(prev => prev.map(r => r.id === resultId ? { ...r, status: 'completed', imageBase64: image } : r));

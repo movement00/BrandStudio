@@ -165,33 +165,36 @@ function getAI(): GoogleGenAI {
   return new GoogleGenAI({ apiKey: key });
 }
 
-// ═══ SIMPLE BLUEPRINT GENERATE — minimal prompt, max fidelity ═══
-export const generateFromBlueprint = async (
-  blueprintJson: string,
+// ═══ SIMPLE GENERATE — 8 layer style analysis + reference image + texts ═══
+export const generateFromStyleAnalysis = async (
+  styleJson: string,
   referenceImageBase64: string,
   aspectRatio: string,
   brandName: string,
+  texts: { headline: string; supporting: string; cta: string; extra: string },
   logoBase64?: string | null,
 ): Promise<string> => {
   const ai = getAI();
 
   const parts: any[] = [];
 
-  // Reference image first
   parts.push({ text: "REFERANS GÖRSEL:" });
   parts.push({ inlineData: { mimeType: 'image/png', data: referenceImageBase64 } });
 
-  // Logo if available
   if (logoBase64) {
     parts.push({ text: "MARKA LOGOSU:" });
     parts.push({ inlineData: { mimeType: 'image/png', data: logoBase64 } });
   }
 
-  // Minimal prompt + modified JSON
-  parts.push({ text: `Referans görseli, aşağıdaki JSON blueprint'indeki değişikliklere göre yeniden oluştur. Görselin genel havası, objeleri ve kompozisyonu aynı kalsın. Sadece JSON'daki metin ve renk değişikliklerini uygula. ${brandName} logosunu/adını görsele yerleştir.
+  parts.push({ text: `Bu görselin aynısını oluştur. Yazıları değiştir:
+- Başlık: "${texts.headline}"
+- Destek: "${texts.supporting}"
+- CTA: "${texts.cta}"
+- Ekstra: "${texts.extra}"
+- Logo: ${brandName}
 
-BLUEPRINT:
-${blueprintJson}` });
+STİL ANALİZİ:
+${styleJson}` });
 
   const response = await ai.models.generateContent({
     model: 'gemini-3-pro-image-preview',
