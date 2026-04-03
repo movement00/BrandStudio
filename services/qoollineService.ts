@@ -343,60 +343,36 @@ export const generateWithOpenAI = async (
   aspectRatio: string,
   logoBase64?: string | null,
 ): Promise<string> => {
-  // Build image array — reference + optional logo
-  const imageUrls = [`data:image/jpeg;base64,${referenceImageBase64}`];
+  const ai = getAI();
+
+  const parts: any[] = [];
+
+  parts.push({ text: "REFERANS GÖRSEL:" });
+  parts.push({ inlineData: { mimeType: 'image/jpeg', data: referenceImageBase64 } });
+
   if (logoBase64) {
-    imageUrls.push(`data:image/png;base64,${logoBase64}`);
+    parts.push({ text: "MARKA LOGOSU (görsele yerleştir):" });
+    parts.push({ inlineData: { mimeType: 'image/png', data: logoBase64 } });
   }
 
-  // Fal AI sync endpoint
-  let submitRes: Response;
-  try {
-    submitRes = await fetch('https://fal.run/fal-ai/nano-banana-2/edit', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Key ${FAL_KEY}`,
-        'Content-Type': 'application/json',
+  parts.push({ text: editPrompt });
+
+  const response = await ai.models.generateContent({
+    model: 'gemini-3-pro-image-preview',
+    contents: { parts },
+    config: {
+      imageConfig: {
+        aspectRatio: aspectRatio as any,
+        imageSize: '2K',
       },
-      body: JSON.stringify({
-        prompt: editPrompt + (logoBase64 ? '\n\nİkinci görsel marka logosudur. Bu logoyu görsele yerleştir.' : ''),
-        image_urls: imageUrls,
-        aspect_ratio: aspectRatio,
-        resolution: '2K',
-        num_images: 1,
-      }),
-    });
-  } catch (fetchErr: any) {
-    throw new Error(`Fal AI baglanti hatasi: ${fetchErr.message}`);
-  }
-
-  const responseText = await submitRes.text();
-  if (!responseText) throw new Error(`Fal AI bos yanit (status: ${submitRes.status})`);
-
-  let resultData: any;
-  try {
-    resultData = JSON.parse(responseText);
-  } catch {
-    throw new Error(`Fal AI JSON parse hatasi: ${responseText.slice(0, 200)}`);
-  }
-
-  if (!submitRes.ok) throw new Error(`Fal AI hata (${submitRes.status}): ${resultData.detail || responseText.slice(0, 200)}`);
-
-  const imageUrl = resultData.images?.[0]?.url;
-  if (!imageUrl) throw new Error('Gorsel URL bulunamadi');
-
-  const imgRes = await fetch(imageUrl);
-  const imgBlob = await imgRes.blob();
-  // Convert blob to base64 without stack overflow
-  return new Promise<string>((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onloadend = () => {
-      const result = reader.result as string;
-      resolve(result.split(',')[1]);
-    };
-    reader.onerror = reject;
-    reader.readAsDataURL(imgBlob);
+    },
   });
+
+  const candidate = response.candidates?.[0];
+  if (!candidate) throw new Error('Yanıt alınamadı.');
+  const imagePart = candidate.content?.parts?.find((p: any) => p.inlineData);
+  if (!imagePart?.inlineData) throw new Error('Görsel oluşturulamadı.');
+  return imagePart.inlineData.data;
 };
 
 // ═══ SIMPLE GENERATE — 8 layer style analysis + reference image + texts ═══
