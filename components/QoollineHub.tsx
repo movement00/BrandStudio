@@ -185,6 +185,10 @@ RENK DEĞİŞİKLİKLERİ:
 KORU:
 - Tüm objeler, kişiler, nesneler aynı kalsın (sadece renkleri değişebilir)
 - Genel kompozisyon ve yerleşim aynı kalsın
+
+KALDIR:
+- Referanstaki BAŞKA markalara ait logo, iletişim bilgisi, web sitesi, telefon numarası, ödeme logoları (Visa, Mastercard vs.) gibi bilgileri KALDIR
+- Sadece kampanya metinleri ve ${brand.name} bilgileri kullan
 ${typoDirective ? `\nTİPOGRAFİ:\n${typoDirective}` : ''}`;
 
       // 4:5 MASTER — OpenAI
