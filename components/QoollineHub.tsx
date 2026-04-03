@@ -165,12 +165,12 @@ Eğer görselde metin yoksa, bu kampanya metinlerini uygun yerlere ekle.\n`;
           // Both agents work together for pricing campaigns
           const [pricingResult, typoResult] = await Promise.all([
             analyzePricingTypography(campaign, brand),
-            analyzeTypography(campaign, brand, bp.layers || []),
+            analyzeTypography(campaign, brand, bp.layers || [], ref.base64),
           ]);
           typoDirective = `FIYAT KAMPANYASI:\n${pricingResult}\n\nTIPOGRAFI:\n${typoResult}`;
           log(`  → Fiyat + Tipografi Agentleri birlikte calisti`);
         } else {
-          typoDirective = await analyzeTypography(campaign, brand, bp.layers || []);
+          typoDirective = await analyzeTypography(campaign, brand, bp.layers || [], ref.base64);
           log(`  → Tipografi: ${typoDirective.slice(0, 80)}...`);
         }
       } catch { /* skip if fails */ }
@@ -185,6 +185,11 @@ RENK DEĞİŞİKLİKLERİ:
 KORU:
 - Tüm objeler, kişiler, nesneler aynı kalsın (sadece renkleri değişebilir)
 - Genel kompozisyon ve yerleşim aynı kalsın
+
+SİL:
+- Referans görseldeki MEVCUT yazıları/metinleri SİL
+- Sadece yukarıdaki kampanya metinlerini kullan
+- Eski marka adı, eski slogan, eski CTA — hepsini kaldır
 ${typoDirective ? `\nTİPOGRAFİ:\n${typoDirective}` : ''}`;
 
       // 4:5 MASTER — OpenAI

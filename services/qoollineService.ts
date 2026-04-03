@@ -241,16 +241,22 @@ export const analyzeTypography = async (
   campaign: QoollineCampaign,
   brand: Brand,
   blueprintLayers: any[],
+  referenceImageBase64?: string,
 ): Promise<string> => {
   const ai = getAI();
 
   const textLayers = blueprintLayers.filter((l: any) => l.type === 'text' || l.type === 'logo');
 
-  const response = await ai.models.generateContent({
-    model: 'gemini-3-pro-preview',
-    contents: {
-      parts: [{
-        text: `Sen Paula Scher (Pentagram) ve Stefan Sagmeister seviyesinde bir tipografi direktörüsün. Dünyanın en iyi reklam ajanslarındaki gibi tipografi kararları alıyorsun.
+  const parts: any[] = [];
+
+  // Send reference image so agent can SEE the visual
+  if (referenceImageBase64) {
+    parts.push({ inlineData: { mimeType: 'image/jpeg', data: referenceImageBase64 } });
+  }
+
+  parts.push({ text: `Sen Paula Scher (Pentagram) ve Stefan Sagmeister seviyesinde bir tipografi direktörüsün. Dünyanın en iyi reklam ajanslarındaki gibi tipografi kararları alıyorsun.
+
+BU GÖRSELE BAK ve tipografi kararını görselin havasına, renklerine ve boş alanlarına göre ver.
 
 MARKA: ${brand.name}
 RENK PALETİ: ${brand.palette.map(c => `${c.name}: ${c.hex}`).join(', ')}
@@ -305,9 +311,11 @@ KARAR VER (3-4 cümle, kısa ve net):
 
 Ekstra ikon, kutucuk, dekorasyon ÖNERME. Sadece tipografi ve yerleşim.
 
-SADECE talimatı yaz.`
-      }]
-    }
+SADECE talimatı yaz.` });
+
+  const response = await ai.models.generateContent({
+    model: 'gemini-3-pro-preview',
+    contents: { parts }
   });
 
   return response.text || '';
