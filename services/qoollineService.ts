@@ -271,7 +271,7 @@ TEMEL İLKELERİN:
 - FONT MIX: Script/handwritten, heritage serif, bold sans-serif, thin elegant — kampanyaya uygun olanı seç.
 - BOYUT: Her seferinde farklı yaklaşım. Bazen devasa vurgu + küçük destek, bazen komple minimal eşit boyut, bazen sadece ince elegant tipografi. Tekrara düşme.
 - RENK: Max 2 renk metin için. Vurgu rengi marka paletinden.
-- ÇEŞİTLİLİK: Her kampanya farklı tipografi yaklaşımı olsun. Paula Scher gibi agresif bold, Sagmeister gibi deneysel, Massimo Vignelli gibi grid-temelli minimal, veya luxury brand gibi ince serif. Görsele ve kampanya ruhuna göre karar ver.
+- ÇEŞİTLİLİK: Bu sefer şu yaklaşımı kullan → ${['Paula Scher: agresif bold, devasa tek kelime, katmanlı', 'Stefan Sagmeister: deneysel, beklenmedik yerleşim, duygu odaklı', 'Massimo Vignelli: grid-temelli, minimal, eşit boyutlu, temiz', 'Luxury serif: ince heritage serif, zarif, sessiz güç', 'Modern sans: thin/light sans-serif, çok boşluk, minimal', 'Kontrast: bir kelime devasa bold, geri kalan çok küçük thin'][Math.floor(Math.random() * 6)]}
 - YERLESTIRME: Ana mesaj üstte. CTA aşağıda veya sağda, boşlukla izole.
 - CTA ZORUNLU BUTON: CTA her zaman yuvarlak köşeli dikdörtgen BUTON formatında olmalı. Marka renklerinden biri arka plan, kontrast metin. Düz metin CTA YASAK.
 
