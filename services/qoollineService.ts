@@ -271,12 +271,23 @@ TEMEL İLKELERİN:
 - FONT MIX: Script/handwritten, heritage serif, bold sans-serif, thin elegant — kampanyaya uygun olanı seç.
 - BOYUT: Her seferinde farklı yaklaşım. Bazen devasa vurgu + küçük destek, bazen komple minimal eşit boyut, bazen sadece ince elegant tipografi. Tekrara düşme.
 - RENK: Max 2 renk metin için. Vurgu rengi marka paletinden.
-- ÇEŞİTLİLİK: Görselin havasına göre en uygun yaklaşımı seç:
-  * Koyu/dramatik görsel → thin beyaz serif veya bold kontrast
-  * Canlı/enerjik görsel → agresif bold sans-serif (Paula Scher)
-  * Sakin/minimal görsel → ince elegant serif (luxury)
-  * Kalabalik görsel → küçük temiz metin, çok boşluk (Vignelli)
-  * Duygusal görsel → script/handwritten vurgu (Sagmeister)
+- ÇEŞİTLİLİK: Görselin havasına göre en uygun tipografi yaklaşımını seç. Seçeneklerin:
+  * Paula Scher: agresif bold, devasa tek kelime, katmanlı, tipografik olarak baskın
+  * Sagmeister: deneysel, beklenmedik yerleşim, duygu odaklı, script vurgu
+  * Vignelli: grid-temelli, minimal, eşit boyutlu, temiz swiss style
+  * Luxury serif: ince heritage serif, zarif, sessiz güç, çok boşluk
+  * Modern sans: thin/light sans-serif, ultra minimal, nefes alan
+  * Kontrast: bir kelime devasa bold, geri kalan çok küçük thin
+  * Retro/vintage: klasik serif, nostaljik hava, sıcak tonlar
+  * Brutalist: ham, çiğ, güçlü, büyük blok harfler, siyah-beyaz
+  * Geometric: düzgün açılar, grid hizalı, yapısal, Bauhaus esinli
+  * Organic/flowing: akıcı, yumuşak, script + thin sans birleşimi
+  * Layered: katmanlı metin, gölgeli, derinlikli, 3D his
+  * Monospace/tech: kod fontu hissi, teknik, modern, dijital
+  * Neon/glow: parlak, ışıklı metin efekti, karanlık arka plan
+  * Gradient text: metin içinde renk geçişi, modern, dikkat çekici
+  * Outline/kontur: içi boş harfler, ince çizgi, zarif ve hafif
+  * Cutout/kolaj: kesme stili, farklı boyut-renk parçalar, dinamik
 - YERLEŞİM KARARI: Görseldeki boş alanlara göre metinlerin NEREYE yerleşeceğine karar ver:
   * Üst boşluk varsa → başlık üstte
   * Alt boşluk varsa → başlık altta, CTA en altta
