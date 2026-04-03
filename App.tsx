@@ -219,7 +219,8 @@ function App() {
   useEffect(() => { saveToStorage('lumina_brands', brands); }, [brands]);
   useEffect(() => { saveToStorage('lumina_templates', templates); }, [templates]);
   useEffect(() => { saveToStorage('lumina_folders', folders); }, [folders]);
-  useEffect(() => { saveToStorage('lumina_history', history); }, [history]);
+  // History no longer saved to localStorage — prevents storage overflow on mobile
+  // useEffect(() => { saveToStorage('lumina_history', history); }, [history]);
 
   const addToHistory = (asset: GeneratedAsset) => {
     setHistory(prev => {
