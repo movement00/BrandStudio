@@ -165,12 +165,12 @@ Eğer görselde metin yoksa, bu kampanya metinlerini uygun yerlere ekle.\n`;
           // Both agents work together for pricing campaigns
           const [pricingResult, typoResult] = await Promise.all([
             analyzePricingTypography(campaign, brand),
-            analyzeTypography(campaign, brand, bp.layers || []),
+            analyzeTypography(campaign, brand, bp.layers || [], ref.base64),
           ]);
           typoDirective = `FIYAT KAMPANYASI:\n${pricingResult}\n\nTIPOGRAFI:\n${typoResult}`;
           log(`  → Fiyat + Tipografi Agentleri birlikte calisti`);
         } else {
-          typoDirective = await analyzeTypography(campaign, brand, bp.layers || []);
+          typoDirective = await analyzeTypography(campaign, brand, bp.layers || [], ref.base64);
           log(`  → Tipografi: ${typoDirective.slice(0, 80)}...`);
         }
       } catch { /* skip if fails */ }
