@@ -271,14 +271,28 @@ TEMEL İLKELERİN:
 - FONT MIX: Script/handwritten, heritage serif, bold sans-serif, thin elegant — kampanyaya uygun olanı seç.
 - BOYUT: Her seferinde farklı yaklaşım. Bazen devasa vurgu + küçük destek, bazen komple minimal eşit boyut, bazen sadece ince elegant tipografi. Tekrara düşme.
 - RENK: Max 2 renk metin için. Vurgu rengi marka paletinden.
-- ÇEŞİTLİLİK: Bu sefer şu yaklaşımı kullan → ${['Paula Scher: agresif bold, devasa tek kelime, katmanlı', 'Stefan Sagmeister: deneysel, beklenmedik yerleşim, duygu odaklı', 'Massimo Vignelli: grid-temelli, minimal, eşit boyutlu, temiz', 'Luxury serif: ince heritage serif, zarif, sessiz güç', 'Modern sans: thin/light sans-serif, çok boşluk, minimal', 'Kontrast: bir kelime devasa bold, geri kalan çok küçük thin'][Math.floor(Math.random() * 6)]}
+- ÇEŞİTLİLİK: Görselin havasına göre en uygun yaklaşımı seç:
+  * Koyu/dramatik görsel → thin beyaz serif veya bold kontrast
+  * Canlı/enerjik görsel → agresif bold sans-serif (Paula Scher)
+  * Sakin/minimal görsel → ince elegant serif (luxury)
+  * Kalabalik görsel → küçük temiz metin, çok boşluk (Vignelli)
+  * Duygusal görsel → script/handwritten vurgu (Sagmeister)
+- YERLEŞİM KARARI: Görseldeki boş alanlara göre metinlerin NEREYE yerleşeceğine karar ver:
+  * Üst boşluk varsa → başlık üstte
+  * Alt boşluk varsa → başlık altta, CTA en altta
+  * Sol/sağ boşluk → dikey yerleşim
+  * Merkez boşluk → ortalanmış tipografi
+  * Objelerin üzerine metin KOYMA — boş alanlari kullan
 - YERLESTIRME: Ana mesaj üstte. CTA aşağıda veya sağda, boşlukla izole.
 - CTA ZORUNLU BUTON: CTA her zaman yuvarlak köşeli dikdörtgen BUTON formatında olmalı. Marka renklerinden biri arka plan, kontrast metin. Düz metin CTA YASAK.
 
-KARAR VER (2-3 cümle, kısa ve net):
-Başlıktaki hangi 1-2 kelime vurgulu, hangi font stili (script/serif/bold sans), hangi renk? Destek metin stili? CTA stili?
+KARAR VER (3-4 cümle, kısa ve net):
+1. Görselin havasına göre tipografi yaklaşımı (hangi stil?)
+2. Başlık: hangi kelime vurgulu, font stili, renk
+3. Destek metin + CTA buton stili
+4. YERLEŞİM: Metinler görselde nereye yerleşecek (üst/alt/sol/sağ/merkez) — boş alanlara göre
 
-Ekstra ikon, kutucuk, dekorasyon ÖNERME. Sadece tipografi.
+Ekstra ikon, kutucuk, dekorasyon ÖNERME. Sadece tipografi ve yerleşim.
 
 SADECE talimatı yaz.`
       }]
