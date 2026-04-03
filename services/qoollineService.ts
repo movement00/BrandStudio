@@ -250,7 +250,7 @@ export const analyzeTypography = async (
     model: 'gemini-3-pro-preview',
     contents: {
       parts: [{
-        text: `Sen dünya çapında ödüllü bir tipografi direktörüsün. Profesyonel reklam ajansı seviyesinde tipografi kararları alıyorsun.
+        text: `Sen Paula Scher (Pentagram) ve Stefan Sagmeister seviyesinde bir tipografi direktörüsün. Dünyanın en iyi reklam ajanslarındaki gibi tipografi kararları alıyorsun.
 
 MARKA: ${brand.name}
 RENK PALETİ: ${brand.palette.map(c => `${c.name}: ${c.hex}`).join(', ')}
@@ -260,25 +260,25 @@ KAMPANYA:
 - Başlık: "${campaign.core}"
 - Destek: "${campaign.supporting}"
 - CTA: "${campaign.cta}"
-- Extra: "${campaign.extra}"
 
 MEVCUT TEXT KATMANLARI:
 ${textLayers.map(l => `- [${l.type}] "${l.content}" (${l.position?.anchor || ''})`).join('\n')}
 
-Şu tipografi kararlarını ver (kısa ve net, 3-4 cümle):
+TEMEL İLKELERİN:
+- 3 ODAK NOKTASI KURALI: Görselde max 3 tipografik eleman. Fazla ikon, kutucuk, dekorasyon EKLEME.
+- HİYERARŞİ: Hook (başlık) en büyük, Context (destek) başlığın %50-60'ı, Action (CTA) izole.
+- QUIET LUXURY: Az eleman, çok boşluk, ince ama güçlü. Kalabalık değil, nefes alan.
+- FONT MIX: 1 kelimeyi script/handwritten veya heritage serif, geri kalanı bold sans-serif yap.
+- BOYUT KONTRASTI: Ana vurgu kelimesi DEVASA, geri kalan dramatik şekilde küçük.
+- RENK: Max 2 renk metin için. 1 vurgu kelimesi farklı renk, geri kalan tek renk.
+- YERLESTIRME: Ana mesaj üstte. CTA aşağıda veya sağda, boşlukla izole.
 
-1. FONT KARİŞIMI: Hangi kelimeler script/el yazısı font, hangileri bold sans-serif? Karma kullanım şık duruyor.
-2. RENK VURGUSU: Hangi kelime(ler) farklı renkte? Marka paletinden hangi renk? Gradient metin kullanılabilir mi?
-3. BOYUT KONTRASTİ: Ana kelime DEVASA, destek küçük — boyut farkı ne kadar olmalı?
-4. METİN EFEKTLER: Rotasyonlu/açılı metin var mı? Gölge? Kontur? Arka plan kutusu?
-5. CTA STİLİ: Buton rengi, metin rengi, köşe yuvarlaklığı, gölge?
+KARAR VER (2-3 cümle, kısa ve net):
+Başlıktaki hangi 1-2 kelime vurgulu, hangi font stili (script/serif/bold sans), hangi renk? Destek metin stili? CTA stili?
 
-ÖRNEKLER (esinlen ama kopyalama):
-- "'Roaming Fees' script font ile mor #6B63FF, 'Stop Paying' bold uppercase beyaz, boyut 3:1 oranında"
-- "'Connected' kelimesi gradient sarı→mor, geri kalan thin sans-serif beyaz"
-- "Destek metin 45° açılı, italic, açık gri. CTA yuvarlak buton sarı #F8BE00 arka plan"
+Ekstra ikon, kutucuk, dekorasyon ÖNERME. Sadece tipografi.
 
-SADECE kısa talimatı yaz (3-4 cümle). Başka açıklama ekleme.`
+SADECE talimatı yaz.`
       }]
     }
   });
