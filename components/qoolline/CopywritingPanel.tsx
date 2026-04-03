@@ -7,10 +7,9 @@ import { resizeImageToRawBase64 } from '../../services/geminiService';
 interface CopywritingPanelProps {
   onSelectVariant?: (variant: CopyVariant) => void;
   onGenerateWithVariant?: (variant: CopyVariant, referenceImage: PipelineImage) => void;
-  onGenerateAllVariants?: (variants: CopyVariant[], referenceImage: PipelineImage) => void;
 }
 
-const CopywritingPanel: React.FC<CopywritingPanelProps> = ({ onSelectVariant, onGenerateWithVariant, onGenerateAllVariants }) => {
+const CopywritingPanel: React.FC<CopywritingPanelProps> = ({ onSelectVariant, onGenerateWithVariant }) => {
   const [selectedCampaignId, setSelectedCampaignId] = useState(QOOLLINE_CAMPAIGNS[0].id);
   const [variants, setVariants] = useState<CopyVariant[]>([]);
   const [isGenerating, setIsGenerating] = useState(false);
@@ -104,9 +103,9 @@ const CopywritingPanel: React.FC<CopywritingPanelProps> = ({ onSelectVariant, on
               </div>
             </div>
           ))}
-          {/* Generate all variants as images — SINGLE batch call */}
-          {referenceImage && onGenerateAllVariants && (
-            <button onClick={() => onGenerateAllVariants(variants, referenceImage!)} className="w-full py-2.5 bg-[#F8BE00] text-[#201C1D] rounded-xl font-bold text-xs flex items-center justify-center gap-1.5 mt-2">
+          {/* Generate all variants as images */}
+          {referenceImage && onGenerateWithVariant && (
+            <button onClick={() => variants.forEach(v => onGenerateWithVariant(v, referenceImage!))} className="w-full py-2.5 bg-[#F8BE00] text-[#201C1D] rounded-xl font-bold text-xs flex items-center justify-center gap-1.5 mt-2">
               <ImageIcon size={12} /> Tum {variants.length} Varyantla Gorsel Uret
             </button>
           )}

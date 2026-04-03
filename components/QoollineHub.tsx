@@ -165,12 +165,12 @@ Eğer görselde metin yoksa, bu kampanya metinlerini uygun yerlere ekle.\n`;
           // Both agents work together for pricing campaigns
           const [pricingResult, typoResult] = await Promise.all([
             analyzePricingTypography(campaign, brand),
-            analyzeTypography(campaign, brand, bp.layers || [], ref.base64),
+            analyzeTypography(campaign, brand, bp.layers || []),
           ]);
           typoDirective = `FIYAT KAMPANYASI:\n${pricingResult}\n\nTIPOGRAFI:\n${typoResult}`;
           log(`  → Fiyat + Tipografi Agentleri birlikte calisti`);
         } else {
-          typoDirective = await analyzeTypography(campaign, brand, bp.layers || [], ref.base64);
+          typoDirective = await analyzeTypography(campaign, brand, bp.layers || []);
           log(`  → Tipografi: ${typoDirective.slice(0, 80)}...`);
         }
       } catch { /* skip if fails */ }
@@ -185,11 +185,6 @@ RENK DEĞİŞİKLİKLERİ:
 KORU:
 - Tüm objeler, kişiler, nesneler aynı kalsın (sadece renkleri değişebilir)
 - Genel kompozisyon ve yerleşim aynı kalsın
-
-SİL:
-- Referans görseldeki MEVCUT yazıları/metinleri SİL
-- Sadece yukarıdaki kampanya metinlerini kullan
-- Eski marka adı, eski slogan, eski CTA — hepsini kaldır
 ${typoDirective ? `\nTİPOGRAFİ:\n${typoDirective}` : ''}`;
 
       // 4:5 MASTER — OpenAI
@@ -350,16 +345,10 @@ ${typoDirective ? `\nTİPOGRAFİ:\n${typoDirective}` : ''}`;
                 </button>); })}
             </div>
             {activeTab === 'campaigns' && <CampaignFactory brand={brand} onStartGeneration={handleStartGeneration} isRunning={isRunning} />}
-            {activeTab === 'copy' && <CopywritingPanel
-              onGenerateWithVariant={(variant, refImg) => {
-                const campaign: QoollineCampaign = { id: `copy-${Date.now()}`, type: 'Copy Variant', core: variant.headline, supporting: variant.supporting, cta: variant.cta, extra: variant.extra, notes: variant.reasoning };
-                handleStartGeneration([campaign], ['4:5', '9:16'], [refImg]);
-              }}
-              onGenerateAllVariants={(variants, refImg) => {
-                const campaigns = variants.map((v, i) => ({ id: `copy-all-${Date.now()}-${i}`, type: `Copy V${i + 1}`, core: v.headline, supporting: v.supporting, cta: v.cta, extra: v.extra, notes: v.reasoning }));
-                handleStartGeneration(campaigns, ['4:5', '9:16'], [refImg]);
-              }}
-            />}
+            {activeTab === 'copy' && <CopywritingPanel onGenerateWithVariant={(variant, refImg) => {
+              const campaign: QoollineCampaign = { id: `copy-${Date.now()}`, type: 'Copy Variant', core: variant.headline, supporting: variant.supporting, cta: variant.cta, extra: variant.extra, notes: variant.reasoning };
+              handleStartGeneration([campaign], ['4:5', '9:16'], [refImg]);
+            }} />}
             {activeTab === 'countries' && (
               <CountryThemes selectedCountries={selectedCountries} onToggleCountry={(id) => setSelectedCountries(prev => { const n = new Set(prev); if (n.has(id)) n.delete(id); else n.add(id); return n; })} selectedCampaignId={countryCampaignId} onCampaignChange={setCountryCampaignId} />
             )}
