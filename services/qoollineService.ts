@@ -549,7 +549,7 @@ SADECE talimati yaz.`
 };
 
 // ═══ PEXELS IMAGE SEARCH — Free stock photo API ═══
-const PEXELS_KEY = 'jFMCYFRBIjYn5lVCfeJGgLxaGCaPnOzJbBNqMFgrqWEUDmVKY3jdX0WL';
+const PEXELS_KEY = 'mZfqRoctg93r2Du147oojllm97yGK6lXuwCVZTUKrxITlTPlR7qPeJ2Y';
 
 export const searchPexelsImages = async (
   query: string,
