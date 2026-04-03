@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Zap, Globe, Sparkles, Loader2, Download, Square, FileText, Check, XCircle, Clock, Edit2, Send, Upload, RefreshCw, Key } from 'lucide-react';
 import { Brand, GeneratedAsset, QoollineCampaign, PipelineImage, PipelineRun, PipelineResult } from '../types';
 import { decomposeToBlueprint, analyzeImageStyle, matchTopicsToStyles, reviseGeneratedImage, resizeImageToRawBase64 } from '../services/geminiService';
-import { QOOLLINE_CAMPAIGNS, QOOLLINE_COUNTRIES, QOOLLINE_PRICING, generateWithOpenAI, analyzeTypography, generateWebCampaigns, getOpenAIKey, setOpenAIKey, hasOpenAIKey } from '../services/qoollineService';
+import { QOOLLINE_CAMPAIGNS, QOOLLINE_COUNTRIES, QOOLLINE_PRICING, generateWithOpenAI, analyzeTypography, analyzePricingTypography, generateWebCampaigns, getOpenAIKey, setOpenAIKey, hasOpenAIKey } from '../services/qoollineService';
 import { downloadBase64Image, downloadMultipleImages } from '../services/downloadService';
 import CampaignFactory from './qoolline/CampaignFactory';
 import CopywritingPanel from './qoolline/CopywritingPanel';
@@ -155,11 +155,17 @@ const QoollineHub: React.FC<QoollineHubProps> = ({ brand, addToHistory }) => {
 Eğer görselde metin varsa, yukarıdaki metinlerle değiştir.
 Eğer görselde metin yoksa, bu kampanya metinlerini uygun yerlere ekle.\n`;
 
-      // Typography agent — decide emphasis, colors, sizes
+      // Typography/Pricing agent — decide emphasis, colors, sizes
       let typoDirective = '';
+      const isPricingCampaign = campaign.id.startsWith('web-') || campaign.core.match(/\$|€|£|%\d|off|indirim/i);
       try {
-        typoDirective = await analyzeTypography(campaign, brand, bp.layers || []);
-        log(`  → Tipografi: ${typoDirective.slice(0, 80)}...`);
+        if (isPricingCampaign) {
+          typoDirective = await analyzePricingTypography(campaign, brand);
+          log(`  → Fiyat Agenti: ${typoDirective.slice(0, 80)}...`);
+        } else {
+          typoDirective = await analyzeTypography(campaign, brand, bp.layers || []);
+          log(`  → Tipografi: ${typoDirective.slice(0, 80)}...`);
+        }
       } catch { /* skip if fails */ }
 
       const editPrompt = `Bu görseli "${brand.name}" markası için düzenle.

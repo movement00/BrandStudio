@@ -502,6 +502,52 @@ SADECE JSON don.`
   } catch { return []; }
 };
 
+// ═══ PRICING CAMPAIGN AGENT — Special approach for price-focused visuals ═══
+export const analyzePricingTypography = async (
+  campaign: QoollineCampaign,
+  brand: Brand,
+): Promise<string> => {
+  const ai = getAI();
+
+  const response = await ai.models.generateContent({
+    model: 'gemini-3-pro-preview',
+    contents: {
+      parts: [{
+        text: `Sen fiyat odakli reklam kampanyasi uzmanissin. E-ticaret ve performance marketing gorsellerinde fiyatin ON PLANDA oldugu tasarimlar yaratiyorsun.
+
+MARKA: ${brand.name}
+RENK PALETİ: ${brand.palette.map(c => `${c.name}: ${c.hex}`).join(', ')}
+
+KAMPANYA: ${campaign.type}
+- Baslik: "${campaign.core}"
+- Destek: "${campaign.supporting}"
+- CTA: "${campaign.cta}"
+- Extra: "${campaign.extra}"
+
+FIYAT ODAKLI TASARIM KURALLARI:
+- Fiyat/indirim rakamı EN BÜYÜK eleman — görselin %40'ını kaplamalı
+- Fiyat rengi dikkat çekici olmalı (marka paletinden en parlak renk)
+- Currency işareti ($, €) fiyattan küçük ama yanında
+- "From" / "Starting at" / "Only" gibi tetikleyici kelime fiyatın üstünde küçük
+- CTA butonu urgency hissi vermeli (parlak renk, büyük)
+- Ülke adı/bayrağı varsa küçük badge olarak
+- Destek metin kısa, net, fiyatın altında
+- Arka plan temiz — fiyat ve CTA dışında minimum eleman
+
+KARAR VER (3-4 cümle):
+1. Fiyat nasıl gösterilecek? Boyut, renk, yerleşim
+2. Tetikleyici kelime ne? (From/Only/Starting at/Just)
+3. CTA butonu stili — urgency hissi nasıl verilecek?
+4. Genel yerleşim — fiyat nerede, CTA nerede?
+
+SADECE talimati yaz.`
+      }]
+    }
+  });
+
+  return response.text || '';
+};
+
 // ═══ CAMPAIGN TEMPLATES ═══
 export const QOOLLINE_CAMPAIGNS: QoollineCampaign[] = [
   {
