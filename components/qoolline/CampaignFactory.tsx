@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
 import { Check, Zap, Upload, X, Plus, Loader2, Sparkles, Download } from 'lucide-react';
 import { Brand, QoollineCampaign, PipelineImage } from '../../types';
-import { QOOLLINE_CAMPAIGNS, generateCampaignTemplates } from '../../services/qoollineService';
+import { QOOLLINE_CAMPAIGNS, generateCampaignTemplates, generateCopyVariants } from '../../services/qoollineService';
+import { Copy } from 'lucide-react';
 import { resizeImageToRawBase64 } from '../../services/geminiService';
 
 interface CampaignFactoryProps {
@@ -29,6 +30,7 @@ const CampaignFactory: React.FC<CampaignFactoryProps> = ({ brand, onStartGenerat
   const [customExtra, setCustomExtra] = useState('');
   const [customType, setCustomType] = useState('Custom');
   const [isGeneratingTemplates, setIsGeneratingTemplates] = useState(false);
+  const [isGeneratingVariants, setIsGeneratingVariants] = useState(false);
   const [templateCount, setTemplateCount] = useState(6);
   const [templateStyle, setTemplateStyle] = useState('');
 
@@ -84,6 +86,30 @@ const CampaignFactory: React.FC<CampaignFactoryProps> = ({ brand, onStartGenerat
       alert('Sablon uretimi basarisiz: ' + err.message);
     }
     setIsGeneratingTemplates(false);
+  };
+
+  const handleGenerateVariants = async () => {
+    if (selectedCampaignList.length === 0) return;
+    setIsGeneratingVariants(true);
+    try {
+      for (const campaign of selectedCampaignList) {
+        const variants = await generateCopyVariants(campaign, 2);
+        const newCampaigns = variants.map((v, i) => ({
+          id: `variant-${campaign.id}-${i}-${Date.now()}`,
+          type: `${campaign.type} (V${i + 1})`,
+          core: v.headline,
+          supporting: v.supporting,
+          cta: v.cta,
+          extra: v.extra,
+          notes: v.reasoning,
+        }));
+        setCustomCampaigns(prev => [...prev, ...newCampaigns]);
+        newCampaigns.forEach(c => setSelectedCampaigns(prev => new Set(prev).add(c.id)));
+      }
+    } catch (err: any) {
+      console.error('Variant generation error:', err);
+    }
+    setIsGeneratingVariants(false);
   };
 
   const exportToExcel = () => {
@@ -148,6 +174,13 @@ const CampaignFactory: React.FC<CampaignFactoryProps> = ({ brand, onStartGenerat
           })}
         </div>
       </div>
+
+      {/* Variant Generation */}
+      {selectedCampaignList.length > 0 && (
+        <button onClick={handleGenerateVariants} disabled={isGeneratingVariants} className="w-full py-2 bg-purple-500/10 text-purple-400 border border-purple-500/30 rounded-lg text-xs font-bold hover:bg-purple-500/20 transition-all disabled:opacity-30 flex items-center justify-center gap-1.5">
+          {isGeneratingVariants ? <><Loader2 size={12} className="animate-spin" /> Varyantlar uretiliyor...</> : <><Copy size={12} /> Secili {selectedCampaignList.length} Sablonun Varyantlarini Uret</>}
+        </button>
+      )}
 
       {/* Custom Campaigns */}
       {customCampaigns.map(c => (
