@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Zap, Globe, Sparkles, Loader2, Download, Square, FileText, Check, XCircle, Clock, Edit2, Send, Upload, RefreshCw, Key } from 'lucide-react';
 import { Brand, GeneratedAsset, QoollineCampaign, PipelineImage, PipelineRun, PipelineResult } from '../types';
 import { decomposeToBlueprint, analyzeImageStyle, matchTopicsToStyles, reviseGeneratedImage, resizeImageToRawBase64 } from '../services/geminiService';
-import { QOOLLINE_CAMPAIGNS, QOOLLINE_COUNTRIES, QOOLLINE_PRICING, generateWithOpenAI, analyzeTypography, analyzePricingTypography, generateWebCampaigns, getOpenAIKey, setOpenAIKey, hasOpenAIKey } from '../services/qoollineService';
+import { QOOLLINE_CAMPAIGNS, QOOLLINE_COUNTRIES, QOOLLINE_PRICING, generateWithOpenAI, analyzeTypography, analyzePricingTypography, generateWebCampaigns, searchPexelsImages, downloadImageAsBase64, getOpenAIKey, setOpenAIKey, hasOpenAIKey } from '../services/qoollineService';
 import { downloadBase64Image, downloadMultipleImages } from '../services/downloadService';
 import CampaignFactory from './qoolline/CampaignFactory';
 import CopywritingPanel from './qoolline/CopywritingPanel';
@@ -329,7 +329,10 @@ ${typoDirective ? `\nTİPOGRAFİ:\n${typoDirective}` : ''}`;
                 </button>); })}
             </div>
             {activeTab === 'campaigns' && <CampaignFactory brand={brand} onStartGeneration={handleStartGeneration} isRunning={isRunning} />}
-            {activeTab === 'copy' && <CopywritingPanel />}
+            {activeTab === 'copy' && <CopywritingPanel onGenerateWithVariant={(variant, refImg) => {
+              const campaign: QoollineCampaign = { id: `copy-${Date.now()}`, type: 'Copy Variant', core: variant.headline, supporting: variant.supporting, cta: variant.cta, extra: variant.extra, notes: variant.reasoning };
+              handleStartGeneration([campaign], ['4:5', '9:16'], [refImg]);
+            }} />}
             {activeTab === 'countries' && (
               <CountryThemes selectedCountries={selectedCountries} onToggleCountry={(id) => setSelectedCountries(prev => { const n = new Set(prev); if (n.has(id)) n.delete(id); else n.add(id); return n; })} selectedCampaignId={countryCampaignId} onCampaignChange={setCountryCampaignId} />
             )}
@@ -381,7 +384,33 @@ ${typoDirective ? `\nTİPOGRAFİ:\n${typoDirective}` : ''}`;
                       if (!webRefImage) { alert('Referans gorsel yukleyin.'); return; }
                       handleStartGeneration(webCampaigns, ['4:5', '9:16'], [webRefImage]);
                     }} disabled={isRunning || !webRefImage} className="w-full py-2.5 bg-[#F8BE00] text-[#201C1D] rounded-xl font-bold text-xs disabled:opacity-30 flex items-center justify-center gap-1.5">
-                      <Zap size={12} /> {webCampaigns.length} Kampanya Gorseli Uret
+                      <Zap size={12} /> Referans ile Uret
+                    </button>
+                    <button onClick={async () => {
+                      if (webCampaigns.length === 0) return;
+                      setIsRunning(true);
+                      try {
+                        // Search Pexels for each campaign
+                        const firstCampaign = webCampaigns[0];
+                        const query = `${firstCampaign.type} travel eSIM`;
+                        setLogs(prev => [...prev, `[${new Date().toLocaleTimeString('tr-TR')}] Pexels'tan gorsel araniyor: "${query}"...`]);
+                        const photos = await searchPexelsImages(query, 1);
+                        if (photos.length > 0) {
+                          setLogs(prev => [...prev, `[${new Date().toLocaleTimeString('tr-TR')}]   ✓ Gorsel bulundu: ${photos[0].photographer}`]);
+                          const base64 = await downloadImageAsBase64(photos[0].src);
+                          const autoRef: PipelineImage = { id: `pexels-${Date.now()}`, base64, name: `pexels-${query}.jpg` };
+                          setWebRefImage(autoRef);
+                          handleStartGeneration(webCampaigns, ['4:5', '9:16'], [autoRef]);
+                        } else {
+                          alert('Uygun gorsel bulunamadi. Manuel gorsel yukleyin.');
+                          setIsRunning(false);
+                        }
+                      } catch (err: any) {
+                        setLogs(prev => [...prev, `[${new Date().toLocaleTimeString('tr-TR')}]   ✗ Gorsel arama hatasi: ${err.message}`]);
+                        setIsRunning(false);
+                      }
+                    }} disabled={isRunning} className="w-full py-2 bg-lumina-900 border border-lumina-800 text-slate-300 rounded-xl text-xs flex items-center justify-center gap-1.5 hover:bg-lumina-800 transition-all disabled:opacity-30">
+                      <Globe size={12} /> Otomatik Gorsel Bul + Uret
                     </button>
                   </div>
                 )}

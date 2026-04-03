@@ -548,6 +548,36 @@ SADECE talimati yaz.`
   return response.text || '';
 };
 
+// ═══ PEXELS IMAGE SEARCH — Free stock photo API ═══
+const PEXELS_KEY = 'jFMCYFRBIjYn5lVCfeJGgLxaGCaPnOzJbBNqMFgrqWEUDmVKY3jdX0WL';
+
+export const searchPexelsImages = async (
+  query: string,
+  count: number = 5,
+): Promise<{ url: string; photographer: string; src: string }[]> => {
+  const res = await fetch(`https://api.pexels.com/v1/search?query=${encodeURIComponent(query)}&per_page=${count}&orientation=portrait`, {
+    headers: { 'Authorization': PEXELS_KEY },
+  });
+  const data = await res.json();
+  return (data.photos || []).map((p: any) => ({
+    url: p.url,
+    photographer: p.photographer,
+    src: p.src?.large || p.src?.medium || p.src?.original,
+  }));
+};
+
+// Download image from URL to base64
+export const downloadImageAsBase64 = async (url: string): Promise<string> => {
+  const res = await fetch(url);
+  const blob = await res.blob();
+  return new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onloadend = () => resolve((reader.result as string).split(',')[1]);
+    reader.onerror = reject;
+    reader.readAsDataURL(blob);
+  });
+};
+
 // ═══ CAMPAIGN TEMPLATES ═══
 export const QOOLLINE_CAMPAIGNS: QoollineCampaign[] = [
   {
