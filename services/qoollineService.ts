@@ -250,29 +250,35 @@ export const analyzeTypography = async (
     model: 'gemini-3-pro-preview',
     contents: {
       parts: [{
-        text: `Sen bir tipografi direktörusun. Bu kampanya için metin stillerini belirle.
+        text: `Sen dünya çapında ödüllü bir tipografi direktörüsün. Profesyonel reklam ajansı seviyesinde tipografi kararları alıyorsun.
 
 MARKA: ${brand.name}
 RENK PALETİ: ${brand.palette.map(c => `${c.name}: ${c.hex}`).join(', ')}
+TON: ${brand.tone}
 
 KAMPANYA:
 - Başlık: "${campaign.core}"
 - Destek: "${campaign.supporting}"
 - CTA: "${campaign.cta}"
+- Extra: "${campaign.extra}"
 
 MEVCUT TEXT KATMANLARI:
 ${textLayers.map(l => `- [${l.type}] "${l.content}" (${l.position?.anchor || ''})`).join('\n')}
 
-Şu kararları ver (kısa, net):
-1. Başlıkta hangi kelime(ler) FARKLI RENKTE vurgulanmalı? Hangi renk? (marka paletinden)
-2. Başlık boyutu ve ağırlığı? (bold/extrabold, large/xlarge)
-3. Destek metin stili? (light/regular, renk)
-4. CTA buton stili? (renk, arka plan rengi, bold)
+Şu tipografi kararlarını ver (kısa ve net, 3-4 cümle):
 
-SADECE 2-3 cümlelik kısa talimat yaz. Örnek:
-"Başlıkta 'Roaming Fees' kelimesi #6B63FF mor ile vurgulu, geri kalan beyaz bold. Destek metin açık gri light. CTA butonu #F8BE00 sarı arka plan, siyah bold metin."
+1. FONT KARİŞIMI: Hangi kelimeler script/el yazısı font, hangileri bold sans-serif? Karma kullanım şık duruyor.
+2. RENK VURGUSU: Hangi kelime(ler) farklı renkte? Marka paletinden hangi renk? Gradient metin kullanılabilir mi?
+3. BOYUT KONTRASTİ: Ana kelime DEVASA, destek küçük — boyut farkı ne kadar olmalı?
+4. METİN EFEKTLER: Rotasyonlu/açılı metin var mı? Gölge? Kontur? Arka plan kutusu?
+5. CTA STİLİ: Buton rengi, metin rengi, köşe yuvarlaklığı, gölge?
 
-SADECE talimatı yaz, başka bir şey yazma.`
+ÖRNEKLER (esinlen ama kopyalama):
+- "'Roaming Fees' script font ile mor #6B63FF, 'Stop Paying' bold uppercase beyaz, boyut 3:1 oranında"
+- "'Connected' kelimesi gradient sarı→mor, geri kalan thin sans-serif beyaz"
+- "Destek metin 45° açılı, italic, açık gri. CTA yuvarlak buton sarı #F8BE00 arka plan"
+
+SADECE kısa talimatı yaz (3-4 cümle). Başka açıklama ekleme.`
       }]
     }
   });
