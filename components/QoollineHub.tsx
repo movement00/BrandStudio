@@ -345,10 +345,16 @@ ${typoDirective ? `\nTİPOGRAFİ:\n${typoDirective}` : ''}`;
                 </button>); })}
             </div>
             {activeTab === 'campaigns' && <CampaignFactory brand={brand} onStartGeneration={handleStartGeneration} isRunning={isRunning} />}
-            {activeTab === 'copy' && <CopywritingPanel onGenerateWithVariant={(variant, refImg) => {
-              const campaign: QoollineCampaign = { id: `copy-${Date.now()}`, type: 'Copy Variant', core: variant.headline, supporting: variant.supporting, cta: variant.cta, extra: variant.extra, notes: variant.reasoning };
-              handleStartGeneration([campaign], ['4:5', '9:16'], [refImg]);
-            }} />}
+            {activeTab === 'copy' && <CopywritingPanel
+              onGenerateWithVariant={(variant, refImg) => {
+                const campaign: QoollineCampaign = { id: `copy-${Date.now()}`, type: 'Copy Variant', core: variant.headline, supporting: variant.supporting, cta: variant.cta, extra: variant.extra, notes: variant.reasoning };
+                handleStartGeneration([campaign], ['4:5', '9:16'], [refImg]);
+              }}
+              onGenerateAllVariants={(variants, refImg) => {
+                const campaigns = variants.map((v, i) => ({ id: `copy-all-${Date.now()}-${i}`, type: `Copy V${i + 1}`, core: v.headline, supporting: v.supporting, cta: v.cta, extra: v.extra, notes: v.reasoning }));
+                handleStartGeneration(campaigns, ['4:5', '9:16'], [refImg]);
+              }}
+            />}
             {activeTab === 'countries' && (
               <CountryThemes selectedCountries={selectedCountries} onToggleCountry={(id) => setSelectedCountries(prev => { const n = new Set(prev); if (n.has(id)) n.delete(id); else n.add(id); return n; })} selectedCampaignId={countryCampaignId} onCampaignChange={setCountryCampaignId} />
             )}
