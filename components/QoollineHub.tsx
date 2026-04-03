@@ -155,13 +155,18 @@ const QoollineHub: React.FC<QoollineHubProps> = ({ brand, addToHistory }) => {
 Eğer görselde metin varsa, yukarıdaki metinlerle değiştir.
 Eğer görselde metin yoksa, bu kampanya metinlerini uygun yerlere ekle.\n`;
 
-      // Typography/Pricing agent — decide emphasis, colors, sizes
+      // Typography + Pricing agents
       let typoDirective = '';
       const isPricingCampaign = campaign.id.startsWith('web-') || campaign.core.match(/\$|€|£|%\d|off|indirim/i);
       try {
         if (isPricingCampaign) {
-          typoDirective = await analyzePricingTypography(campaign, brand);
-          log(`  → Fiyat Agenti: ${typoDirective.slice(0, 80)}...`);
+          // Both agents work together for pricing campaigns
+          const [pricingResult, typoResult] = await Promise.all([
+            analyzePricingTypography(campaign, brand),
+            analyzeTypography(campaign, brand, bp.layers || []),
+          ]);
+          typoDirective = `FIYAT KAMPANYASI:\n${pricingResult}\n\nTIPOGRAFI:\n${typoResult}`;
+          log(`  → Fiyat + Tipografi Agentleri birlikte calisti`);
         } else {
           typoDirective = await analyzeTypography(campaign, brand, bp.layers || []);
           log(`  → Tipografi: ${typoDirective.slice(0, 80)}...`);
