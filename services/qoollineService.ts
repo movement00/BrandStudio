@@ -268,9 +268,10 @@ TEMEL İLKELERİN:
 - 3 ODAK NOKTASI KURALI: Görselde max 3 tipografik eleman. Fazla ikon, kutucuk, dekorasyon EKLEME.
 - HİYERARŞİ: Hook (başlık) en büyük, Context (destek) başlığın %50-60'ı, Action (CTA) izole.
 - QUIET LUXURY: Az eleman, çok boşluk, ince ama güçlü. Kalabalık değil, nefes alan.
-- FONT MIX: 1 kelimeyi script/handwritten veya heritage serif, geri kalanı bold sans-serif yap.
-- BOYUT KONTRASTI: Ana vurgu kelimesi DEVASA, geri kalan dramatik şekilde küçük.
-- RENK: Max 2 renk metin için. 1 vurgu kelimesi farklı renk, geri kalan tek renk.
+- FONT MIX: Script/handwritten, heritage serif, bold sans-serif, thin elegant — kampanyaya uygun olanı seç.
+- BOYUT: Her seferinde farklı yaklaşım. Bazen devasa vurgu + küçük destek, bazen komple minimal eşit boyut, bazen sadece ince elegant tipografi. Tekrara düşme.
+- RENK: Max 2 renk metin için. Vurgu rengi marka paletinden.
+- ÇEŞİTLİLİK: Her kampanya farklı tipografi yaklaşımı olsun. Paula Scher gibi agresif bold, Sagmeister gibi deneysel, Massimo Vignelli gibi grid-temelli minimal, veya luxury brand gibi ince serif. Görsele ve kampanya ruhuna göre karar ver.
 - YERLESTIRME: Ana mesaj üstte. CTA aşağıda veya sağda, boşlukla izole.
 - CTA ZORUNLU BUTON: CTA her zaman yuvarlak köşeli dikdörtgen BUTON formatında olmalı. Marka renklerinden biri arka plan, kontrast metin. Düz metin CTA YASAK.
 
