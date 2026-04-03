@@ -253,6 +253,8 @@ export const analyzeTypography = async (
   }
   parts.push({ text: `BU GÖRSELE BAK ve tipografi kararını görselin havasına, renklerine ve boş alanlarına göre ver.
 
+ÖNEMLİ KURAL: Eğer görselde mevcut bir tipografi stili varsa (3D yazı, gölge efekti, gradient metin, neon, outline, arkadan geçen yazı vs.) AYNI stili koru ve kampanya metinlerine uygula. Eğer görselde yazı yoksa kendi kreatif tipografi kararını ver.
+
 ` });
 
   parts.push({ text: `Sen Paula Scher (Pentagram) ve Stefan Sagmeister seviyesinde bir tipografi direktörüsün. Dünyanın en iyi reklam ajanslarındaki gibi tipografi kararları alıyorsun.
