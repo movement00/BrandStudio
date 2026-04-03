@@ -269,6 +269,7 @@ ${typoDirective ? `\nTİPOGRAFİ:\n${typoDirective}` : ''}`;
   const [webSelectedCountries, setWebSelectedCountries] = useState<Set<string>>(new Set(['TR', 'UK', 'US']));
   const [isGeneratingWeb, setIsGeneratingWeb] = useState(false);
   const [webCampaigns, setWebCampaigns] = useState<QoollineCampaign[]>([]);
+  const [webRefImage, setWebRefImage] = useState<PipelineImage | null>(null);
 
   const handleGenerateWebCampaigns = async () => {
     setIsGeneratingWeb(true);
@@ -330,6 +331,22 @@ ${typoDirective ? `\nTİPOGRAFİ:\n${typoDirective}` : ''}`;
               <div className="space-y-4">
                 <h3 className="text-sm font-medium text-white">Web Fiyat Kampanyalari</h3>
                 <p className="text-[10px] text-slate-500">Qoolline.com fiyatlarindan ulke bazli kampanya sablonlari olustur</p>
+                {/* Reference image for web campaigns */}
+                <div>
+                  {webRefImage ? (
+                    <div className="flex items-center gap-2 p-2 bg-lumina-950 border border-lumina-800 rounded-lg">
+                      <img src={`data:image/png;base64,${webRefImage.base64}`} className="w-10 h-10 rounded object-cover" />
+                      <span className="text-[10px] text-slate-400 flex-1 truncate">{webRefImage.name}</span>
+                      <button onClick={() => setWebRefImage(null)} className="text-red-400 text-[10px]">Kaldir</button>
+                    </div>
+                  ) : (
+                    <label className="flex items-center gap-2 p-2 bg-lumina-950 border-2 border-dashed border-lumina-700 rounded-lg cursor-pointer hover:border-lumina-gold/50">
+                      <Upload size={14} className="text-slate-500" />
+                      <span className="text-[10px] text-slate-500">Referans gorsel yukle</span>
+                      <input type="file" accept="image/*" onChange={async e => { const f = e.target.files?.[0]; if (f) { try { const b = await resizeImageToRawBase64(f, 1200); setWebRefImage({ id: `webref-${Date.now()}`, base64: b, name: f.name }); } catch {} } }} className="hidden" />
+                    </label>
+                  )}
+                </div>
                 <div className="grid grid-cols-2 gap-1.5">
                   {QOOLLINE_PRICING.map(p => {
                     const isSel = webSelectedCountries.has(p.code);
@@ -354,6 +371,12 @@ ${typoDirective ? `\nTİPOGRAFİ:\n${typoDirective}` : ''}`;
                         <span className="text-[9px] text-green-400 bg-green-500/10 px-1.5 py-0.5 rounded">{c.cta}</span>
                       </div>
                     ))}
+                    <button onClick={() => {
+                      if (!webRefImage) { alert('Referans gorsel yukleyin.'); return; }
+                      handleStartGeneration(webCampaigns, ['4:5', '9:16'], [webRefImage]);
+                    }} disabled={isRunning || !webRefImage} className="w-full py-2.5 bg-[#F8BE00] text-[#201C1D] rounded-xl font-bold text-xs disabled:opacity-30 flex items-center justify-center gap-1.5">
+                      <Zap size={12} /> {webCampaigns.length} Kampanya Gorseli Uret
+                    </button>
                   </div>
                 )}
               </div>

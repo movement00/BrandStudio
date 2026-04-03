@@ -103,6 +103,12 @@ const CopywritingPanel: React.FC<CopywritingPanelProps> = ({ onSelectVariant, on
               </div>
             </div>
           ))}
+          {/* Generate all variants as images */}
+          {referenceImage && onGenerateWithVariant && (
+            <button onClick={() => variants.forEach(v => onGenerateWithVariant(v, referenceImage!))} className="w-full py-2.5 bg-[#F8BE00] text-[#201C1D] rounded-xl font-bold text-xs flex items-center justify-center gap-1.5 mt-2">
+              <ImageIcon size={12} /> Tum {variants.length} Varyantla Gorsel Uret
+            </button>
+          )}
         </div>
       )}
     </div>
