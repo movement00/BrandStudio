@@ -272,6 +272,7 @@ TEMEL İLKELERİN:
 - BOYUT KONTRASTI: Ana vurgu kelimesi DEVASA, geri kalan dramatik şekilde küçük.
 - RENK: Max 2 renk metin için. 1 vurgu kelimesi farklı renk, geri kalan tek renk.
 - YERLESTIRME: Ana mesaj üstte. CTA aşağıda veya sağda, boşlukla izole.
+- CTA ZORUNLU BUTON: CTA her zaman yuvarlak köşeli dikdörtgen BUTON formatında olmalı. Marka renklerinden biri arka plan, kontrast metin. Düz metin CTA YASAK.
 
 KARAR VER (2-3 cümle, kısa ve net):
 Başlıktaki hangi 1-2 kelime vurgulu, hangi font stili (script/serif/bold sans), hangi renk? Destek metin stili? CTA stili?
