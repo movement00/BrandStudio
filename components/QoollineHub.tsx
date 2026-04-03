@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Zap, Globe, Sparkles, Loader2, Download, Square, FileText, Check, XCircle, Clock, Edit2, Send, Upload, RefreshCw, Key } from 'lucide-react';
 import { Brand, GeneratedAsset, QoollineCampaign, PipelineImage, PipelineRun, PipelineResult } from '../types';
 import { decomposeToBlueprint, analyzeImageStyle, matchTopicsToStyles, reviseGeneratedImage, resizeImageToRawBase64 } from '../services/geminiService';
-import { QOOLLINE_CAMPAIGNS, QOOLLINE_COUNTRIES, QOOLLINE_PRICING, generateWithOpenAI, analyzeTypography, analyzePricingTypography, analyzeColorPalette, analyzeComposition, generateWebCampaigns, orchestrateRevision, searchPexelsImages, downloadImageAsBase64, getOpenAIKey, setOpenAIKey, hasOpenAIKey } from '../services/qoollineService';
+import { QOOLLINE_CAMPAIGNS, QOOLLINE_COUNTRIES, QOOLLINE_PRICING, generateWithOpenAI, analyzeTypography, analyzePricingTypography, generateWebCampaigns, orchestrateRevision, searchPexelsImages, downloadImageAsBase64, getOpenAIKey, setOpenAIKey, hasOpenAIKey } from '../services/qoollineService';
 import { downloadBase64Image, downloadMultipleImages } from '../services/downloadService';
 import CampaignFactory from './qoolline/CampaignFactory';
 import CopywritingPanel from './qoolline/CopywritingPanel';
@@ -84,29 +84,15 @@ const QoollineHub: React.FC<QoollineHubProps> = ({ brand, addToHistory }) => {
     for (let i = 0; i < referenceImages.length; i++) {
       const ref = referenceImages[i];
       try {
-        // 3 agents run in parallel: blueprint + style + color palette
         const [blueprint, style] = await Promise.all([
           decomposeToBlueprint(ref.base64),
           analyzeImageStyle(ref.base64),
         ]);
-
-        // Color + Composition agents (parallel, use blueprint result)
-        let colorDirective = '';
-        let compositionDirective = '';
-        try {
-          const [colorRes, compRes] = await Promise.all([
-            analyzeColorPalette(blueprint.layers || [], brand),
-            analyzeComposition(blueprint.layers || [], blueprint),
-          ]);
-          colorDirective = colorRes;
-          compositionDirective = compRes;
-          log(`  → Renk Paleti Agent: ${colorRes.slice(0, 60)}...`);
-          log(`  → Kompozisyon Agent: ${compRes.slice(0, 60)}...`);
-        } catch { /* skip if fails */ }
-
-        refAnalyses.push({ id: ref.id, blueprint, style, base64: ref.base64, colorDirective, compositionDirective });
+        refAnalyses.push({ id: ref.id, blueprint, style, base64: ref.base64 });
         log(`  ✓ (${i + 1}/${referenceImages.length}) ${ref.name}: ${blueprint.layers?.length || 0} katman`);
+        log(`    Blueprint: ${blueprint.layout?.type || ''}, Renk: ${blueprint.colorSystem?.dominant || ''} / ${blueprint.colorSystem?.secondary || ''}`);
         blueprint.layers?.forEach((l: any) => log(`    • [${l.type}] ${l.content?.slice(0, 50) || ''} (${l.position?.anchor || l.position?.y || ''})`));
+        log(`    Stil: ${style.mood}, ${style.artisticStyle}`);
       } catch (err: any) {
         log(`  ✗ (${i + 1}/${referenceImages.length}) ${ref.name}: ${err.message}`);
       }
@@ -189,10 +175,6 @@ Eğer görselde metin yoksa, bu kampanya metinlerini uygun yerlere ekle.\n`;
         }
       } catch { /* skip if fails */ }
 
-      // Get color + composition from ref analysis
-      const colorDir = (ref as any).colorDirective || '';
-      const compDir = (ref as any).compositionDirective || '';
-
       const editPrompt = `Bu görseli "${brand.name}" markası için düzenle.
 
 ${layerEdits}
@@ -203,8 +185,6 @@ RENK DEĞİŞİKLİKLERİ:
 KORU:
 - Tüm objeler, kişiler, nesneler aynı kalsın (sadece renkleri değişebilir)
 - Genel kompozisyon ve yerleşim aynı kalsın
-${colorDir ? `\nRENK PALETI:\n${colorDir}` : ''}
-${compDir ? `\nKOMPOZİSYON:\n${compDir}` : ''}
 ${typoDirective ? `\nTİPOGRAFİ:\n${typoDirective}` : ''}`;
 
       // 4:5 MASTER — OpenAI
