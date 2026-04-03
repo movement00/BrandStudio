@@ -2,13 +2,13 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Zap, Globe, Sparkles, Loader2, Download, Square, FileText, Check, XCircle, Clock, Edit2, Send, Upload, RefreshCw, Key } from 'lucide-react';
 import { Brand, GeneratedAsset, QoollineCampaign, PipelineImage, PipelineRun, PipelineResult } from '../types';
 import { decomposeToBlueprint, analyzeImageStyle, matchTopicsToStyles, reviseGeneratedImage, resizeImageToRawBase64 } from '../services/geminiService';
-import { QOOLLINE_CAMPAIGNS, QOOLLINE_COUNTRIES, generateWithOpenAI, analyzeTypography, getOpenAIKey, setOpenAIKey, hasOpenAIKey } from '../services/qoollineService';
+import { QOOLLINE_CAMPAIGNS, QOOLLINE_COUNTRIES, QOOLLINE_PRICING, generateWithOpenAI, analyzeTypography, generateWebCampaigns, getOpenAIKey, setOpenAIKey, hasOpenAIKey } from '../services/qoollineService';
 import { downloadBase64Image, downloadMultipleImages } from '../services/downloadService';
 import CampaignFactory from './qoolline/CampaignFactory';
 import CopywritingPanel from './qoolline/CopywritingPanel';
 import CountryThemes from './qoolline/CountryThemes';
 
-type QoollineTab = 'campaigns' | 'copy' | 'countries';
+type QoollineTab = 'campaigns' | 'copy' | 'countries' | 'web';
 
 interface GeneratedResult {
   id: string;
@@ -265,10 +265,25 @@ ${typoDirective ? `\nTİPOGRAFİ:\n${typoDirective}` : ''}`;
   const groups: Record<string, GeneratedResult[]> = {};
   results.forEach(r => { if (!groups[r.campaignId]) groups[r.campaignId] = []; groups[r.campaignId].push(r); });
 
+  // Web campaign state
+  const [webSelectedCountries, setWebSelectedCountries] = useState<Set<string>>(new Set(['TR', 'UK', 'US']));
+  const [isGeneratingWeb, setIsGeneratingWeb] = useState(false);
+  const [webCampaigns, setWebCampaigns] = useState<QoollineCampaign[]>([]);
+
+  const handleGenerateWebCampaigns = async () => {
+    setIsGeneratingWeb(true);
+    try {
+      const campaigns = await generateWebCampaigns(brand, Array.from(webSelectedCountries));
+      setWebCampaigns(campaigns);
+    } catch (err: any) { console.error(err); }
+    setIsGeneratingWeb(false);
+  };
+
   const tabs = [
     { id: 'campaigns' as QoollineTab, label: 'Kampanya', icon: Zap },
     { id: 'copy' as QoollineTab, label: 'Kopya', icon: Sparkles },
     { id: 'countries' as QoollineTab, label: 'Ulkeler', icon: Globe },
+    { id: 'web' as QoollineTab, label: 'Web', icon: Globe },
   ];
 
   return (
@@ -310,6 +325,38 @@ ${typoDirective ? `\nTİPOGRAFİ:\n${typoDirective}` : ''}`;
             {activeTab === 'copy' && <CopywritingPanel />}
             {activeTab === 'countries' && (
               <CountryThemes selectedCountries={selectedCountries} onToggleCountry={(id) => setSelectedCountries(prev => { const n = new Set(prev); if (n.has(id)) n.delete(id); else n.add(id); return n; })} selectedCampaignId={countryCampaignId} onCampaignChange={setCountryCampaignId} />
+            )}
+            {activeTab === 'web' && (
+              <div className="space-y-4">
+                <h3 className="text-sm font-medium text-white">Web Fiyat Kampanyalari</h3>
+                <p className="text-[10px] text-slate-500">Qoolline.com fiyatlarindan ulke bazli kampanya sablonlari olustur</p>
+                <div className="grid grid-cols-2 gap-1.5">
+                  {QOOLLINE_PRICING.map(p => {
+                    const isSel = webSelectedCountries.has(p.code);
+                    return (
+                      <button key={p.code} onClick={() => setWebSelectedCountries(prev => { const n = new Set(prev); if (n.has(p.code)) n.delete(p.code); else n.add(p.code); return n; })} className={`text-left p-2 rounded-lg border text-[11px] transition-all ${isSel ? 'border-lumina-gold/50 bg-lumina-gold/5' : 'border-lumina-800 bg-lumina-900'}`}>
+                        <span>{p.emoji} {p.country}</span>
+                        <span className="block text-lumina-gold text-[10px]">{p.from}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+                <button onClick={handleGenerateWebCampaigns} disabled={isGeneratingWeb || webSelectedCountries.size === 0} className="w-full py-2.5 bg-[#F8BE00] text-[#201C1D] rounded-xl font-bold text-xs disabled:opacity-30 flex items-center justify-center gap-1.5">
+                  {isGeneratingWeb ? <><Loader2 size={12} className="animate-spin" /> Kampanyalar olusturuluyor...</> : <><Globe size={12} /> {webSelectedCountries.size} Ulke Kampanyasi Olustur</>}
+                </button>
+                {webCampaigns.length > 0 && (
+                  <div className="space-y-1.5">
+                    {webCampaigns.map(c => (
+                      <div key={c.id} className="p-2 bg-lumina-950 border border-lumina-800 rounded-lg">
+                        <p className="text-[10px] text-lumina-gold font-bold">{c.type}</p>
+                        <p className="text-xs text-white">{c.core}</p>
+                        <p className="text-[10px] text-slate-400">{c.supporting}</p>
+                        <span className="text-[9px] text-green-400 bg-green-500/10 px-1.5 py-0.5 rounded">{c.cta}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
             )}
           </div>
         </div>

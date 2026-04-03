@@ -439,6 +439,69 @@ ${styleJson}` });
   return imagePart.inlineData.data;
 };
 
+// ═══ QOOLLINE PRICING DATA (scraped from qoolline.com) ═══
+export const QOOLLINE_PRICING = [
+  { country: 'Türkiye', code: 'TR', from: '$1.95', emoji: '🇹🇷', scenario: 'Yabanci turistler icin ucuz veri' },
+  { country: 'United Kingdom', code: 'UK', from: '$2.45', emoji: '🇬🇧', scenario: 'UK→EU seyahat, roaming yok' },
+  { country: 'United States', code: 'US', from: '$3.45', emoji: '🇺🇸', scenario: 'ABD ziyaretcileri icin veri' },
+  { country: 'Japan', code: 'JP', from: '$3.45', emoji: '🇯🇵', scenario: 'Japonya gezginleri icin' },
+  { country: 'France', code: 'FR', from: '$2.45', emoji: '🇫🇷', scenario: 'Fransa/Avrupa seyahati' },
+  { country: 'Germany', code: 'DE', from: '$2.45', emoji: '🇩🇪', scenario: 'Almanya is seyahati' },
+  { country: 'Spain', code: 'ES', from: '$2.45', emoji: '🇪🇸', scenario: 'Ispanya tatili' },
+  { country: 'Italy', code: 'IT', from: '$2.45', emoji: '🇮🇹', scenario: 'Italya kultur turu' },
+  { country: 'Switzerland', code: 'CH', from: '$2.45', emoji: '🇨🇭', scenario: 'Isvicre non-EU baglanti' },
+  { country: 'Thailand', code: 'TH', from: '$3.45', emoji: '🇹🇭', scenario: 'Guneydogu Asya tatili' },
+  { country: 'Egypt', code: 'EG', from: '$5.45', emoji: '🇪🇬', scenario: 'Misir tarihi gezi' },
+  { country: 'Saudi Arabia', code: 'SA', from: '$4.45', emoji: '🇸🇦', scenario: 'Umre/is seyahati' },
+];
+
+// ═══ WEB CAMPAIGN GENERATOR — Price-based campaigns per country ═══
+export const generateWebCampaigns = async (
+  brand: Brand,
+  selectedCountries: string[],
+): Promise<QoollineCampaign[]> => {
+  const ai = getAI();
+  const countries = QOOLLINE_PRICING.filter(p => selectedCountries.includes(p.code));
+
+  const response = await ai.models.generateContent({
+    model: 'gemini-3-pro-preview',
+    contents: {
+      parts: [{
+        text: `Sen ${brand.name} markasi icin fiyat odakli kampanya stratejisti sin.
+
+MARKA: ${brand.name} — International eSIM provider
+FIYATLAR:
+${countries.map(c => `- ${c.emoji} ${c.country}: ${c.from}'den baslayan fiyatlar. Senaryo: ${c.scenario}`).join('\n')}
+
+Her ulke icin 1 adet FIYAT ODAKLI kampanya sablonu olustur:
+- Fiyati ON PLANA cikar
+- Ulkeye ozel mesajlasma
+- Klas ama aksiyon odakli
+- CTA net ve transactional
+
+JSON array olarak don:
+[{"type":"ulke adi","core":"baslik","supporting":"destek","cta":"CTA","extra":"ekstra","notes":"not"}]
+
+SADECE JSON don.`
+      }]
+    },
+    config: { responseMimeType: 'application/json' }
+  });
+
+  try {
+    const parsed = JSON.parse(response.text || '[]');
+    return parsed.map((c: any, i: number) => ({
+      id: `web-${Date.now()}-${i}`,
+      type: c.type || 'Web Campaign',
+      core: c.core || '',
+      supporting: c.supporting || '',
+      cta: c.cta || 'Get eSIM',
+      extra: c.extra || '',
+      notes: c.notes || '',
+    }));
+  } catch { return []; }
+};
+
 // ═══ CAMPAIGN TEMPLATES ═══
 export const QOOLLINE_CAMPAIGNS: QoollineCampaign[] = [
   {
