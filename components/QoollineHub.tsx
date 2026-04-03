@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Zap, Globe, Sparkles, Loader2, Download, Square, FileText, Check, XCircle, Clock, Edit2, Send, Upload, RefreshCw, Key } from 'lucide-react';
 import { Brand, GeneratedAsset, QoollineCampaign, PipelineImage, PipelineRun, PipelineResult } from '../types';
 import { decomposeToBlueprint, analyzeImageStyle, matchTopicsToStyles, reviseGeneratedImage, resizeImageToRawBase64 } from '../services/geminiService';
-import { QOOLLINE_CAMPAIGNS, QOOLLINE_COUNTRIES, QOOLLINE_PRICING, generateWithOpenAI, analyzeTypography, analyzePricingTypography, generateWebCampaigns, searchPexelsImages, downloadImageAsBase64, getOpenAIKey, setOpenAIKey, hasOpenAIKey } from '../services/qoollineService';
+import { QOOLLINE_CAMPAIGNS, QOOLLINE_COUNTRIES, QOOLLINE_PRICING, generateWithOpenAI, analyzeTypography, analyzePricingTypography, generateWebCampaigns, orchestrateRevision, searchPexelsImages, downloadImageAsBase64, getOpenAIKey, setOpenAIKey, hasOpenAIKey } from '../services/qoollineService';
 import { downloadBase64Image, downloadMultipleImages } from '../services/downloadService';
 import CampaignFactory from './qoolline/CampaignFactory';
 import CopywritingPanel from './qoolline/CopywritingPanel';
@@ -18,6 +18,8 @@ interface GeneratedResult {
   status: 'pending' | 'generating' | 'completed' | 'failed';
   imageBase64?: string;
   error?: string;
+  campaign?: QoollineCampaign;
+  blueprintLayers?: any[];
 }
 
 interface QoollineHubProps {
@@ -195,7 +197,7 @@ ${typoDirective ? `\nTİPOGRAFİ:\n${typoDirective}` : ''}`;
       let masterImage: string | null = null;
       try {
         masterImage = await generateWithOpenAI(ref.base64, editPrompt, masterFormat, brand.logo);
-        setResults(prev => prev.map(r => r.id === masterResultId ? { ...r, status: 'completed', imageBase64: masterImage! } : r));
+        setResults(prev => prev.map(r => r.id === masterResultId ? { ...r, status: 'completed', imageBase64: masterImage!, campaign, blueprintLayers: bp.layers } : r));
         log(`  ✓ Master tamamlandi [${masterFormat}]`);
         addToHistory({ id: `q-${masterResultId}`, url: masterImage, promptUsed: campaign.type, brandId: brand.id, createdAt: Date.now() });
       } catch (err: any) {
@@ -240,12 +242,21 @@ ${typoDirective ? `\nTİPOGRAFİ:\n${typoDirective}` : ''}`;
     setRevisingIds(new Set([resultId, ...siblings.map(s => s.id)]));
 
     try {
-      const revised = await generateWithOpenAI(result.imageBase64, prompt, result.format);
+      // Orchestrator: analyze revision request, re-run relevant agents
+      let enhancedPrompt = prompt;
+      if (result.campaign && result.blueprintLayers) {
+        try {
+          enhancedPrompt = await orchestrateRevision(prompt, result.campaign, brand, result.blueprintLayers);
+          setLogs(prev => [...prev, `[${new Date().toLocaleTimeString('tr-TR')}] Revize orchestrator: talep analiz edildi, agentlar calisti`]);
+        } catch { /* fallback to raw prompt */ }
+      }
+
+      const revised = await generateWithOpenAI(result.imageBase64, enhancedPrompt, result.format);
       setResults(prev => prev.map(r => r.id === resultId ? { ...r, imageBase64: revised } : r));
 
       for (const sib of siblings) {
         try {
-          const sibRevised = await generateWithOpenAI(sib.imageBase64!, prompt, sib.format);
+          const sibRevised = await generateWithOpenAI(sib.imageBase64!, enhancedPrompt, sib.format);
           setResults(prev => prev.map(r => r.id === sib.id ? { ...r, imageBase64: sibRevised } : r));
         } catch {}
         setRevisingIds(prev => { const n = new Set(prev); n.delete(sib.id); return n; });

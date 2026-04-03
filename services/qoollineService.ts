@@ -548,6 +548,64 @@ SADECE talimati yaz.`
   return response.text || '';
 };
 
+// ═══ REVISE ORCHESTRATOR — Analyzes revision request and re-runs relevant agents ═══
+export const orchestrateRevision = async (
+  revisionPrompt: string,
+  campaign: QoollineCampaign,
+  brand: Brand,
+  blueprintLayers: any[],
+): Promise<string> => {
+  const ai = getAI();
+
+  // Step 1: Classify the revision request
+  const classifyRes = await ai.models.generateContent({
+    model: 'gemini-3-pro-preview',
+    contents: {
+      parts: [{
+        text: `Bu revize talebini analiz et ve hangi kategoriye girdigini belirle:
+
+TALEP: "${revisionPrompt}"
+
+KATEGORILER:
+- typography: yazi stili, font, boyut, renk vurgusu, baslik degisikligi
+- pricing: fiyat gosterimi, fiyat boyutu, indirim vurgusu
+- layout: yerlestirme, pozisyon, hizalama degisikligi
+- color: renk degisikligi, arka plan, marka renkleri
+- content: metin icerigi degisikligi, farkli kelimeler
+- general: genel revize, birden fazla kategori
+
+Sadece kategori adini yaz, baska bir sey yazma.`
+      }]
+    }
+  });
+
+  const category = (classifyRes.text || 'general').trim().toLowerCase();
+
+  // Step 2: Re-run relevant agent based on category
+  let agentDirective = '';
+
+  if (category.includes('typography') || category.includes('font') || category.includes('yazi')) {
+    agentDirective = await analyzeTypography(campaign, brand, blueprintLayers);
+    agentDirective = `YENI TIPOGRAFI KARARI:\n${agentDirective}`;
+  } else if (category.includes('pricing') || category.includes('fiyat')) {
+    agentDirective = await analyzePricingTypography(campaign, brand);
+    agentDirective = `YENI FIYAT YERLESIMI:\n${agentDirective}`;
+  } else if (category.includes('typography') && category.includes('pricing')) {
+    const [typo, pricing] = await Promise.all([
+      analyzeTypography(campaign, brand, blueprintLayers),
+      analyzePricingTypography(campaign, brand),
+    ]);
+    agentDirective = `YENI TIPOGRAFI:\n${typo}\n\nYENI FIYAT:\n${pricing}`;
+  }
+
+  // Step 3: Combine user request + agent directive
+  const enhancedPrompt = agentDirective
+    ? `${revisionPrompt}\n\n${agentDirective}`
+    : revisionPrompt;
+
+  return enhancedPrompt;
+};
+
 // ═══ PEXELS IMAGE SEARCH — Free stock photo API ═══
 const PEXELS_KEY = 'mZfqRoctg93r2Du147oojllm97yGK6lXuwCVZTUKrxITlTPlR7qPeJ2Y';
 
